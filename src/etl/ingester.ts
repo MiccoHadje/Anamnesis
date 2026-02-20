@@ -4,7 +4,7 @@ import { chunkIntoTurns } from './chunker.js';
 import { extractSessionMetadata } from './metadata.js';
 import { buildEmbeddingText } from '../util/text.js';
 import { linkSession } from './linker.js';
-import { embed, embedBatch, averageEmbeddings } from './embedder.js';
+import { embed, embedBatch, averageEmbeddings, ensureOllama } from './embedder.js';
 import {
   insertSession,
   insertTurnWithEmbedding,
@@ -31,6 +31,9 @@ export async function ingestFile(
 ): Promise<IngestResult> {
   const log = opts?.onProgress || console.log;
 
+  // Fail fast if Ollama isn't available
+  await ensureOllama();
+
   // Collect all messages
   const allMessages = [];
   for await (const msg of parseAllMessages(filePath)) {
@@ -42,6 +45,9 @@ export async function ingestFile(
   const turns = chunkIntoTurns(relevant);
 
   if (turns.length === 0) {
+    // Record the file so we don't rediscover it
+    const stat = statSync(filePath);
+    await upsertIngestedFile(filePath, stat.size, stat.mtime, 'skipped');
     return { sessionId: '', turnCount: 0, skipped: true };
   }
 
@@ -108,9 +114,9 @@ export async function ingestFile(
       }, client);
     }
 
-    // Record ingested file
+    // Record ingested file (inside transaction so it rolls back on error)
     const stat = statSync(filePath);
-    await upsertIngestedFile(filePath, stat.size, stat.mtime, meta.sessionId);
+    await upsertIngestedFile(filePath, stat.size, stat.mtime, meta.sessionId, client);
   });
 
   log(`  Stored ${turns.length} turns with embeddings.`);
@@ -138,6 +144,9 @@ export async function ingestFiles(
 ): Promise<IngestResult[]> {
   const log = opts?.onProgress || console.log;
   const results: IngestResult[] = [];
+
+  // Fail fast if Ollama isn't available
+  await ensureOllama();
 
   for (let i = 0; i < files.length; i++) {
     log(`[${i + 1}/${files.length}] ${files[i].path}`);

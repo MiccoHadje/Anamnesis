@@ -2,7 +2,8 @@ import { parseAllMessages } from './etl/parser.js';
 import { chunkIntoTurns } from './etl/chunker.js';
 import { extractSessionMetadata } from './etl/metadata.js';
 import { buildEmbeddingText } from './util/text.js';
-import { getStats, searchByEmbedding } from './db/queries.js';
+import { statSync } from 'fs';
+import { getStats, searchByEmbedding, upsertIngestedFile } from './db/queries.js';
 import { closePool } from './db/client.js';
 import { ingestFile, ingestFiles } from './etl/ingester.js';
 import { discoverFiles, findFileBySessionId } from './etl/discovery.js';
@@ -141,6 +142,11 @@ async function backfill() {
     } catch (err) {
       errorCount++;
       console.error(`  ERROR: ${err instanceof Error ? err.message : err}`);
+      // Record errored file so it doesn't get rediscovered every run
+      try {
+        const stat = statSync(file.path);
+        await upsertIngestedFile(file.path, stat.size, stat.mtime, 'error');
+      } catch { /* ignore */ }
     }
     processedSize += file.size;
   }

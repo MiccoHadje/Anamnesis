@@ -1,5 +1,16 @@
 import type { RawMessage, ContentBlock } from './parser.js';
 
+/** Strip system-injected tags and task notifications from content */
+const SYSTEM_TAG_RE = /<system-reminder>[\s\S]*?<\/system-reminder>/g;
+const TASK_NOTIFICATION_RE = /<task-notification>[\s\S]*?<\/task-notification>/g;
+
+function sanitizeContent(text: string): string {
+  return text
+    .replace(SYSTEM_TAG_RE, '')
+    .replace(TASK_NOTIFICATION_RE, '')
+    .trim();
+}
+
 /**
  * A turn is a user+assistant pair. The user part may include tool_result blocks
  * (responses to the previous assistant's tool_use), and the assistant part
@@ -48,8 +59,8 @@ export function chunkIntoTurns(messages: RawMessage[]): Turn[] {
 
     turns.push({
       turnIndex,
-      userContent: currentUserTexts.join('\n').trim(),
-      assistantContent: currentAssistantTexts.join('\n').trim(),
+      userContent: sanitizeContent(currentUserTexts.join('\n')),
+      assistantContent: sanitizeContent(currentAssistantTexts.join('\n')),
       toolCalls: currentToolCalls,
       filesInTurn: [...currentFiles],
       timestampStart: turnStart,
@@ -97,10 +108,11 @@ export function chunkIntoTurns(messages: RawMessage[]): Turn[] {
           } else if (block.type === 'tool_result') {
             // Tool results come from previous assistant tool_use
             // Include file paths from results in this turn's context
+            // Skip image blocks (base64 data) — only extract text
             const resultText = typeof block.content === 'string'
               ? block.content
               : Array.isArray(block.content)
-                ? block.content.map(b => b.text || '').join('')
+                ? block.content.filter(b => b.type === 'text').map(b => b.text || '').join('')
                 : '';
             // Extract file paths from tool results
             extractFilePaths(resultText, currentFiles);
@@ -148,27 +160,39 @@ export function chunkIntoTurns(messages: RawMessage[]): Turn[] {
   return turns;
 }
 
+const MAX_SUMMARY_CHARS = 200;
+
 function summarizeToolInput(name: string, input?: Record<string, unknown>): string {
   if (!input) return '';
 
+  let summary: string;
   switch (name) {
     case 'Read':
-      return String(input.file_path || '');
+      summary = String(input.file_path || '');
+      break;
     case 'Write':
     case 'Edit':
-      return String(input.file_path || '');
+      summary = String(input.file_path || '');
+      break;
     case 'Glob':
-      return String(input.pattern || '');
+      summary = String(input.pattern || '');
+      break;
     case 'Grep':
-      return `${input.pattern || ''} in ${input.path || '.'}`;
+      summary = `${input.pattern || ''} in ${input.path || '.'}`;
+      break;
     case 'Bash':
-      const cmd = String(input.command || '');
-      return cmd.length > 100 ? cmd.slice(0, 100) + '...' : cmd;
+      summary = String(input.command || '');
+      break;
     case 'Task':
-      return String(input.description || '');
+      summary = String(input.description || '');
+      break;
     default:
-      return Object.keys(input).join(', ');
+      summary = Object.keys(input).join(', ');
+      break;
   }
+  return summary.length > MAX_SUMMARY_CHARS
+    ? summary.slice(0, MAX_SUMMARY_CHARS) + '...'
+    : summary;
 }
 
 const FILE_PATH_RE = /(?:[A-Z]:\\|\/)[^\s"'`<>|]+\.\w{1,10}/gi;

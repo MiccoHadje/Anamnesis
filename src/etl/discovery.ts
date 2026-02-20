@@ -1,7 +1,7 @@
 import { readdirSync, statSync } from 'fs';
 import { join, basename } from 'path';
 import { getConfig } from '../util/config.js';
-import { getIngestedFile } from '../db/queries.js';
+import { getIngestedFilesMap } from '../db/queries.js';
 
 export interface DiscoveredFile {
   path: string;
@@ -72,17 +72,18 @@ export async function discoverFiles(opts?: {
   }
 
   if (!opts?.forceAll) {
-    // Filter out already-ingested files with matching size/mtime
+    // Batch lookup — single query instead of N queries
+    const allPaths = files.map(f => f.path);
+    const ingested = await getIngestedFilesMap(allPaths);
     const filtered: DiscoveredFile[] = [];
     for (const file of files) {
-      const existing = await getIngestedFile(file.path);
+      const existing = ingested.get(file.path);
       if (!existing) {
         filtered.push(file);
       } else if (
         existing.file_size !== file.size ||
         new Date(existing.file_mtime).getTime() !== file.mtime.getTime()
       ) {
-        // File changed — needs re-ingestion
         filtered.push(file);
       }
     }

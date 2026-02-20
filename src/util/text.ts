@@ -1,7 +1,7 @@
 import type { Turn } from '../etl/chunker.js';
 
 const MAX_TOOL_OUTPUT_CHARS = 500;
-const MAX_EMBEDDING_CHARS = 30000; // ~7500 tokens for bge-m3's 8192 window
+const MAX_EMBEDDING_CHARS = 8000; // bge-m3 has 8192 token context; ~1 char/token for code-heavy text
 
 /**
  * Build the text that will be embedded for a turn.

@@ -11,13 +11,29 @@ export async function getIngestedFile(filePath: string) {
   return rows[0] || null;
 }
 
+export async function getIngestedFilesMap(filePaths: string[]): Promise<Map<string, { file_size: number; file_mtime: string }>> {
+  if (filePaths.length === 0) return new Map();
+  const { rows } = await getPool().query(
+    'SELECT file_path, file_size, file_mtime FROM anamnesis_ingested_files WHERE file_path = ANY($1)',
+    [filePaths]
+  );
+  const map = new Map<string, { file_size: number; file_mtime: string }>();
+  for (const row of rows) {
+    // file_size comes back as string from pg bigint
+    map.set(row.file_path, { file_size: Number(row.file_size), file_mtime: row.file_mtime });
+  }
+  return map;
+}
+
 export async function upsertIngestedFile(
   filePath: string,
   fileSize: number,
   fileMtime: Date,
-  sessionId: string
+  sessionId: string,
+  client?: pg.PoolClient
 ) {
-  await getPool().query(
+  const q = client || getPool();
+  await q.query(
     `INSERT INTO anamnesis_ingested_files (file_path, file_size, file_mtime, session_id)
      VALUES ($1, $2, $3, $4)
      ON CONFLICT (file_path) DO UPDATE SET
@@ -140,7 +156,10 @@ export async function insertTurnWithEmbedding(
     `INSERT INTO anamnesis_turns
        (session_id, turn_index, user_content, assistant_content, tool_calls,
         files_in_turn, timestamp_start, timestamp_end, token_count, embedding_text, embedding)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::vector)`,
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::vector)
+     ON CONFLICT (session_id, turn_index) DO UPDATE SET
+       user_content=$3, assistant_content=$4, tool_calls=$5, files_in_turn=$6,
+       timestamp_start=$7, timestamp_end=$8, token_count=$9, embedding_text=$10, embedding=$11::vector`,
     [
       turn.session_id,
       turn.turn_index,

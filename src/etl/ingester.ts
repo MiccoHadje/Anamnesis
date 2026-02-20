@@ -4,12 +4,14 @@ import { chunkIntoTurns } from './chunker.js';
 import { extractSessionMetadata } from './metadata.js';
 import { buildEmbeddingText } from '../util/text.js';
 import { linkSession } from './linker.js';
+import { extractTopics } from './topics.js';
 import { embed, embedBatch, averageEmbeddings, ensureOllama } from './embedder.js';
 import {
   insertSession,
   insertTurnWithEmbedding,
   deleteSessionData,
   upsertIngestedFile,
+  updateSessionTopics,
 } from '../db/queries.js';
 import { withTransaction } from '../db/client.js';
 
@@ -123,8 +125,20 @@ export async function ingestFile(
 
   // Auto-link to related sessions
   const links = await linkSession(meta.sessionId);
-  if (links.fileLinks || links.semanticLinks) {
-    log(`  Linked: ${links.fileLinks} file overlap, ${links.semanticLinks} semantic.`);
+  if (links.fileLinks || links.semanticLinks || links.topicLinks) {
+    log(`  Linked: ${links.fileLinks} file overlap, ${links.semanticLinks} semantic, ${links.topicLinks} topic.`);
+  }
+
+  // Extract topics (best-effort, non-blocking)
+  try {
+    const topics = await extractTopics(meta.sessionId, meta.projectName || null, meta.filesTouched, meta.toolsUsed);
+    if (topics) {
+      await updateSessionTopics(meta.sessionId, topics.tags, topics.summary);
+      log(`  Topics: [${topics.tags.join(', ')}]`);
+    }
+  } catch (err) {
+    // Topic extraction is optional — don't fail ingestion
+    log(`  Topic extraction skipped: ${err instanceof Error ? err.message : err}`);
   }
 
   return {

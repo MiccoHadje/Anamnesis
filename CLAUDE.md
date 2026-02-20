@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Anamnesis** is a persistent semantic memory system for Claude Code sessions. It parses JSONL conversation transcripts, embeds them with bge-m3, stores them in PostgreSQL+pgvector, and exposes them via MCP tools for future session context retrieval.
 
-**Status:** Phases 1-7 complete. MCP server registered, SessionEnd hook active, SessionStart recall hook active, CLI functional. Backfill done (243 sessions, 4745 turns).
+**Status:** Phases 1-8 complete. MCP server registered, SessionEnd hook active, SessionStart recall hook active, CLI functional. Backfill done (243 sessions, 4745 turns). Topic extraction, improved search quality, and full documentation added in Phase 8.
 
 ## Architecture
 
@@ -25,6 +25,7 @@ node dist/index.js ingest-session [id]   # SessionEnd hook / manual
 node dist/index.js ingest <file>         # Ingest single JSONL
 node dist/index.js ingest-all            # Discover + ingest new transcripts
 node dist/index.js backfill              # Full backfill of all transcripts
+node dist/index.js backfill-topics       # Extract tags/summaries for all sessions
 node dist/index.js search <query>        # CLI semantic search
 node dist/index.js stats                 # Database statistics
 ```
@@ -41,7 +42,8 @@ node dist/index.js stats                 # Database statistics
 | `src/etl/embedder.ts` | Ollama bge-m3 embedding client |
 | `src/etl/ingester.ts` | Full orchestrator: parse → chunk → embed → store → link |
 | `src/etl/discovery.ts` | File scanning, idempotency, privacy filtering |
-| `src/etl/linker.ts` | Auto-linking: file overlap + semantic similarity |
+| `src/etl/linker.ts` | Auto-linking: file overlap + semantic similarity + topic overlap |
+| `src/etl/topics.ts` | Topic extraction + summary via Ollama gemma3:12b |
 | `src/etl/metadata.ts` | Session metadata extraction (project, files, tools) |
 | `src/db/schema.sql` | Database DDL (4 tables) |
 | `src/db/client.ts` | pg Pool wrapper |
@@ -72,8 +74,9 @@ node dist/index.js stats                 # Database statistics
 | Stack | Node.js/TypeScript |
 | Embedding | Ollama bge-m3, 1024-dim, concurrency 4 |
 | Database | WS25 localhost (collocated with transcripts + model) |
-| Auto-linking | File overlap + semantic similarity (topic extraction deferred) |
-| Search | Cosine similarity + optional hybrid (RRF with tsvector) |
+| Auto-linking | File overlap + semantic similarity + topic overlap (3 layers) |
+| Search | Cosine similarity + hybrid (RRF with tsvector + recency boost), min threshold 0.3 |
+| Topic extraction | Ollama gemma3:12b, 3-5 tags + 1-sentence summary per session |
 | Idempotency | Track file_path + size + mtime in `anamnesis_ingested_files` |
 
 ## Database Tables

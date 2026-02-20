@@ -167,23 +167,34 @@ The hook receives session context via stdin. Gracefully exits if JSONL not yet f
 - Create Windows Scheduled Task
 - **Verify:** End a session, confirm auto-ingestion
 
-### Phase 6: Full Backfill
+### Phase 6: Full Backfill ✅
 - Process all 2,120 files (sorted smallest-first for quick feedback)
 - Progress reporting, error resilience, resume support
 - Auto-link all sessions (file overlap + semantic)
+- **Result:** 243 sessions, 4,745 turns ingested
 
-### Phase 7: Triggers + Proactive Recall
+### Phase 7: Triggers + Proactive Recall ✅
 - Draft trigger instructions for global CLAUDE.md
 - Draft project-specific trigger examples
-- Test proactive session-start search behavior
+- SessionStart recall hook (`anamnesis-recall.py`)
 - **Verify:** Start a new session, confirm Claude proactively searches for context
 
-### Phase 8: Polish + Topic Extraction (Layer 3)
-- Hybrid search (semantic + keyword)
-- Topic extraction via Ollama (deferred auto-linking layer 3)
-- Better MCP output formatting
-- Update CLAUDE.md, CONCEPT.md, DESIGN_BRIEF.md
-- Performance tuning if needed
+### Phase 8: Polish + Topic Extraction (Layer 3) ✅
+- Fixed JSON.parse bug on already-parsed JSONB in session detail
+- Fixed RRF score display (was showing meaningless percentages)
+- Added minimum similarity threshold (0.3) to vector search
+- Increased hybrid candidate pool from 50 to 100 per arm
+- Made project filters case-insensitive
+- Added recency boost to hybrid search
+- Increased content truncation limits for better context
+- Added turn timestamps, session duration, subagent labels
+- Added turn pagination for large sessions (first 10 + last 5)
+- Topic extraction via Ollama gemma3:12b (tags + summary)
+- Topic linking (Layer 3): sessions sharing 2+ tags
+- `backfill-topics` CLI command
+- `search_mode` and `topic_model` config options
+- Created README.md with full documentation + deployment guide
+- Updated PLAN.md and CLAUDE.md
 
 ## Key Dependencies
 

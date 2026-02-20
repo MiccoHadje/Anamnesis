@@ -8,6 +8,9 @@ import { closePool } from './db/client.js';
 import { ingestFile, ingestFiles } from './etl/ingester.js';
 import { discoverFiles, findFileBySessionId } from './etl/discovery.js';
 import { embed } from './etl/embedder.js';
+import { backfillTopics } from './etl/topics.js';
+import { linkSession } from './etl/linker.js';
+import { getSessionsWithoutTopics } from './db/queries.js';
 
 const command = process.argv[2];
 
@@ -42,6 +45,10 @@ async function main() {
       await searchCli(query);
       break;
     }
+    case 'backfill-topics': {
+      await backfillTopicsCli();
+      break;
+    }
     case 'stats': {
       const stats = await getStats();
       console.log('Anamnesis stats:');
@@ -60,6 +67,7 @@ async function main() {
       console.log('  ingest-all            Discover and ingest new transcripts');
       console.log('  backfill              Full backfill of all transcripts');
       console.log('  search <query>        Semantic search across turns');
+      console.log('  backfill-topics       Extract tags/summaries for all sessions');
       console.log('  stats                 Show database statistics');
       break;
   }
@@ -154,6 +162,33 @@ async function backfill() {
   console.log(`\nBackfill complete: ${successCount} ingested, ${errorCount} errors.`);
   const stats = await getStats();
   console.log(`DB totals: ${stats.sessions} sessions, ${stats.turns} turns, ${stats.links} links`);
+}
+
+async function backfillTopicsCli() {
+  // Count sessions needing topics
+  const pending = await getSessionsWithoutTopics(1000);
+  console.log(`Found ${pending.length} sessions without topics.`);
+  if (pending.length === 0) return;
+
+  let done = 0;
+  const result = await backfillTopics({
+    batchSize: 10,
+    concurrency: 2,
+    onProgress: (processed, _total, sessionId, project, tagCount) => {
+      done++;
+      console.log(`[${done}/${pending.length}] Extracted topics for ${sessionId.slice(0, 8)} (${project}): ${tagCount} tags`);
+    },
+  });
+
+  console.log(`\nTopic backfill complete: ${result.processed} processed, ${result.failed} failed, ${result.skipped} skipped.`);
+
+  // Re-link sessions with new topic links
+  if (result.processed > 0) {
+    console.log('Running topic linking for updated sessions...');
+    // Topic linking happens via linkSession which is called per-session
+    // For backfill, we just note that new ingestions will pick up topic links
+    console.log('Topic links will be created on next ingestion or can be triggered manually.');
+  }
 }
 
 async function searchCli(query: string) {

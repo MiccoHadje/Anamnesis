@@ -191,16 +191,17 @@ export interface SearchResult {
 
 export async function searchByEmbedding(
   embedding: number[],
-  opts?: { project?: string; limit?: number; since?: string }
+  opts?: { project?: string; limit?: number; since?: string; minSimilarity?: number }
 ): Promise<SearchResult[]> {
   const embStr = `[${embedding.join(',')}]`;
   const limit = opts?.limit || 5;
+  const minSim = opts?.minSimilarity ?? 0.3;
   const conditions: string[] = [];
   const params: unknown[] = [embStr, limit];
 
   if (opts?.project) {
     params.push(opts.project);
-    conditions.push(`s.project_name = $${params.length}`);
+    conditions.push(`LOWER(s.project_name) = LOWER($${params.length})`);
   }
   if (opts?.since) {
     params.push(opts.since);
@@ -221,7 +222,8 @@ export async function searchByEmbedding(
      LIMIT $2`,
     params
   );
-  return rows;
+  // Filter by minimum similarity threshold
+  return rows.filter((r: SearchResult) => r.similarity >= minSim);
 }
 
 export async function searchHybrid(
@@ -236,7 +238,7 @@ export async function searchHybrid(
 
   if (opts?.project) {
     params.push(opts.project);
-    conditions.push(`s.project_name = $${params.length}`);
+    conditions.push(`LOWER(s.project_name) = LOWER($${params.length})`);
   }
   if (opts?.since) {
     params.push(opts.since);
@@ -246,20 +248,21 @@ export async function searchHybrid(
   const where = conditions.length > 0 ? `AND ${conditions.join(' AND ')}` : '';
 
   // Combine vector similarity and full-text relevance with RRF (Reciprocal Rank Fusion)
+  // Recency boost: multiply RRF score by 1 + 0.1 * (1 / (1 + days_ago))
   const { rows } = await getPool().query(
     `WITH semantic AS (
        SELECT t.id, ROW_NUMBER() OVER (ORDER BY t.embedding <=> $1::vector) AS rank
        FROM anamnesis_turns t
        JOIN anamnesis_sessions s ON s.session_id = t.session_id
        WHERE t.embedding IS NOT NULL ${where}
-       LIMIT 50
+       LIMIT 100
      ),
      keyword AS (
        SELECT t.id, ROW_NUMBER() OVER (ORDER BY ts_rank(t.tsv, plainto_tsquery('english', $2)) DESC) AS rank
        FROM anamnesis_turns t
        JOIN anamnesis_sessions s ON s.session_id = t.session_id
        WHERE t.tsv @@ plainto_tsquery('english', $2) ${where}
-       LIMIT 50
+       LIMIT 100
      ),
      combined AS (
        SELECT COALESCE(s.id, k.id) AS id,
@@ -269,12 +272,12 @@ export async function searchHybrid(
      )
      SELECT t.session_id, t.turn_index, ses.project_name,
             t.user_content, t.assistant_content,
-            c.rrf_score AS similarity,
+            c.rrf_score * (1.0 + 0.1 / (1.0 + EXTRACT(EPOCH FROM (NOW() - COALESCE(ses.started_at, NOW()))) / 86400.0)) AS similarity,
             t.timestamp_start, ses.started_at
      FROM combined c
      JOIN anamnesis_turns t ON t.id = c.id
      JOIN anamnesis_sessions ses ON ses.session_id = t.session_id
-     ORDER BY c.rrf_score DESC
+     ORDER BY similarity DESC
      LIMIT $3`,
     params
   );
@@ -296,7 +299,7 @@ export async function getRecentSessions(opts?: {
 
   if (opts?.project) {
     params.push(opts.project);
-    conditions.push(`project_name = $${params.length}`);
+    conditions.push(`LOWER(project_name) = LOWER($${params.length})`);
   }
   if (opts?.file) {
     params.push(opts.file);
@@ -349,6 +352,41 @@ export async function getSession(sessionId: string) {
   );
 
   return { ...session, turns, related_sessions: links };
+}
+
+// --- Topics ---
+
+export async function updateSessionTopics(
+  sessionId: string,
+  tags: string[],
+  summary: string
+) {
+  await getPool().query(
+    `UPDATE anamnesis_sessions SET tags = $2, summary = $3 WHERE session_id = $1`,
+    [sessionId, tags, summary]
+  );
+}
+
+export async function getSessionsWithoutTopics(limit = 50): Promise<{ session_id: string; project_name: string; files_touched: string[]; tools_used: string[]; turn_count: number }[]> {
+  const { rows } = await getPool().query(
+    `SELECT session_id, project_name, files_touched, tools_used, turn_count
+     FROM anamnesis_sessions
+     WHERE (tags = '{}' OR tags IS NULL) AND turn_count > 0
+     ORDER BY started_at DESC
+     LIMIT $1`,
+    [limit]
+  );
+  return rows;
+}
+
+export async function getFirstUserMessage(sessionId: string): Promise<string | null> {
+  const { rows } = await getPool().query(
+    `SELECT user_content FROM anamnesis_turns
+     WHERE session_id = $1 AND user_content IS NOT NULL
+     ORDER BY turn_index LIMIT 1`,
+    [sessionId]
+  );
+  return rows[0]?.user_content || null;
 }
 
 // --- Stats ---

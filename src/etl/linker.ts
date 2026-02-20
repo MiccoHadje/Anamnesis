@@ -4,11 +4,13 @@ import { getPool } from '../db/client.js';
  * Run auto-linking for a newly ingested session.
  * Layer 1: File overlap — link sessions that share files_touched entries.
  * Layer 2: Semantic similarity — compare session embeddings.
+ * Layer 3: Topic overlap — link sessions sharing 2+ tags (Jaccard similarity).
  */
-export async function linkSession(sessionId: string): Promise<{ fileLinks: number; semanticLinks: number }> {
+export async function linkSession(sessionId: string): Promise<{ fileLinks: number; semanticLinks: number; topicLinks: number }> {
   const fileLinks = await linkByFileOverlap(sessionId);
   const semanticLinks = await linkBySemantic(sessionId);
-  return { fileLinks, semanticLinks };
+  const topicLinks = await linkByTopic(sessionId);
+  return { fileLinks, semanticLinks, topicLinks };
 }
 
 /**
@@ -104,6 +106,57 @@ async function linkBySemantic(sessionId: string, topN = 5, threshold = 0.5): Pro
        VALUES ($1, $2, 'semantic', $3, $4)
        ON CONFLICT (session_a, session_b, link_type) DO UPDATE SET score = $3`,
       [a, b, other.similarity, `${(other.similarity * 100).toFixed(0)}% similar`]
+    );
+    count++;
+  }
+
+  return count;
+}
+
+/**
+ * Layer 3: Topic tag linking.
+ * Link sessions that share 2+ tags. Score = Jaccard similarity (shared / union).
+ */
+async function linkByTopic(sessionId: string): Promise<number> {
+  const pool = getPool();
+
+  const { rows: [session] } = await pool.query(
+    'SELECT tags FROM anamnesis_sessions WHERE session_id = $1',
+    [sessionId]
+  );
+  if (!session?.tags?.length) return 0;
+
+  const myTags = new Set(session.tags as string[]);
+  if (myTags.size === 0) return 0;
+
+  // Find sessions with overlapping tags (array overlap operator)
+  const { rows: overlapping } = await pool.query(
+    `SELECT session_id, tags
+     FROM anamnesis_sessions
+     WHERE session_id != $1
+       AND tags && $2::text[]
+       AND array_length(tags, 1) > 0`,
+    [sessionId, session.tags]
+  );
+
+  let count = 0;
+  for (const other of overlapping) {
+    const otherTags = new Set(other.tags as string[]);
+    const shared = [...myTags].filter(t => otherTags.has(t));
+    if (shared.length < 2) continue; // Require at least 2 shared tags
+
+    const union = new Set([...myTags, ...otherTags]);
+    const score = shared.length / union.size;
+
+    const [a, b] = sessionId < other.session_id
+      ? [sessionId, other.session_id]
+      : [other.session_id, sessionId];
+
+    await pool.query(
+      `INSERT INTO anamnesis_session_links (session_a, session_b, link_type, score, shared_detail)
+       VALUES ($1, $2, 'topic', $3, $4)
+       ON CONFLICT (session_a, session_b, link_type) DO UPDATE SET score = $3, shared_detail = $4`,
+      [a, b, score, `shared tags: ${shared.join(', ')}`]
     );
     count++;
   }

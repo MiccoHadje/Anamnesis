@@ -108,18 +108,27 @@ async function handleSearch(args: Record<string, unknown>): Promise<string> {
   const lines: string[] = [`Found ${results.length} results:\n`];
   for (const r of results) {
     const date = r.started_at ? new Date(r.started_at).toLocaleDateString() : '?';
-    const sim = typeof r.similarity === 'number' ? `${(r.similarity * 100).toFixed(1)}%` : '?';
-    lines.push(`## [${r.project_name || '?'}] ${r.session_id.slice(0, 8)} turn ${r.turn_index} — ${sim} match — ${date}`);
+    const turnDate = r.timestamp_start ? new Date(r.timestamp_start).toLocaleString() : null;
+    const sim = hybrid ? formatRelevance(r.similarity) : `${(r.similarity * 100).toFixed(1)}%`;
+    lines.push(`## [${r.session_id.slice(0, 8)}] [${r.project_name || '?'}] turn ${r.turn_index} — ${sim} match — ${date}`);
+    if (turnDate) lines.push(`Turn time: ${turnDate}`);
     if (r.user_content) {
-      lines.push(`**User:** ${truncate(r.user_content, 300)}`);
+      lines.push(`**User:** ${truncate(r.user_content, 500)}`);
     }
     if (r.assistant_content) {
-      lines.push(`**Assistant:** ${truncate(r.assistant_content, 500)}`);
+      lines.push(`**Assistant:** ${truncate(r.assistant_content, 800)}`);
     }
     lines.push('');
   }
 
   return lines.join('\n');
+}
+
+function formatRelevance(rrfScore: number): string {
+  // RRF scores are typically 0.01-0.03 range. Map to human-readable labels.
+  if (rrfScore >= 0.03) return 'high';
+  if (rrfScore >= 0.02) return 'medium';
+  return 'low';
 }
 
 async function handleRecent(args: Record<string, unknown>): Promise<string> {
@@ -138,7 +147,9 @@ async function handleRecent(args: Record<string, unknown>): Promise<string> {
   for (const s of sessions) {
     const date = new Date(s.started_at).toLocaleString();
     const tools = (s.tools_used || []).join(', ');
-    lines.push(`## ${s.session_id.slice(0, 8)} — ${s.project_name || '?'} — ${date}`);
+    const subagentLabel = s.is_subagent ? ' (subagent)' : '';
+    const duration = s.started_at && s.ended_at ? formatDuration(new Date(s.ended_at).getTime() - new Date(s.started_at).getTime()) : null;
+    lines.push(`## [${s.session_id.slice(0, 8)}] ${s.project_name || '?'}${subagentLabel} — ${date}${duration ? ` (${duration})` : ''}`);
     lines.push(`  Turns: ${s.turn_count} | Model: ${s.model || '?'}`);
     if (tools) lines.push(`  Tools: ${tools}`);
     if (s.summary) lines.push(`  Summary: ${s.summary}`);
@@ -177,6 +188,13 @@ async function handleSession(args: Record<string, unknown>): Promise<string> {
   lines.push(`Model: ${session.model || '?'}`);
   lines.push(`Time: ${session.started_at ? new Date(session.started_at).toLocaleString() : '?'} → ${session.ended_at ? new Date(session.ended_at).toLocaleString() : '?'}`);
   lines.push(`Turns: ${session.turn_count}`);
+  if (session.started_at && session.ended_at) {
+    lines.push(`Duration: ${formatDuration(new Date(session.ended_at).getTime() - new Date(session.started_at).getTime())}`);
+  }
+  if (session.is_subagent) lines.push(`Type: subagent`);
+  if (session.tags?.length) {
+    lines.push(`Tags: ${session.tags.join(', ')}`);
+  }
   if (session.files_touched?.length) {
     lines.push(`Files: ${session.files_touched.join(', ')}`);
   }
@@ -193,14 +211,32 @@ async function handleSession(args: Record<string, unknown>): Promise<string> {
     }
   }
 
-  // Turns
+  // Turns — paginate if >20 turns and no explicit range
   lines.push('\n## Turns');
-  for (const t of turns) {
-    lines.push(`\n### Turn ${t.turn_index}`);
-    if (t.user_content) lines.push(`**User:** ${truncate(t.user_content, 500)}`);
-    if (t.assistant_content) lines.push(`**Assistant:** ${truncate(t.assistant_content, 1000)}`);
+  let displayTurns = turns;
+  const MAX_AUTO_TURNS = 20;
+  if (!args.turn_range && turns.length > MAX_AUTO_TURNS) {
+    const firstN = 10;
+    const lastN = 5;
+    const omitted = turns.length - firstN - lastN;
+    displayTurns = [...turns.slice(0, firstN), null as unknown, ...turns.slice(-lastN)];
+    // We'll handle the null sentinel below
+    lines.push(`*Showing first ${firstN} + last ${lastN} of ${turns.length} turns. Use turn_range for specific turns.*\n`);
+  }
+
+  for (const t of displayTurns) {
+    if (t === null) {
+      const omitted = turns.length - 10 - 5;
+      lines.push(`\n*... ${omitted} turns omitted ...*\n`);
+      continue;
+    }
+    const turnTime = t.timestamp_start ? new Date(t.timestamp_start).toLocaleTimeString() : '';
+    lines.push(`\n### Turn ${t.turn_index}${turnTime ? ` (${turnTime})` : ''}`);
+    if (t.user_content) lines.push(`**User:** ${truncate(t.user_content, 1200)}`);
+    if (t.assistant_content) lines.push(`**Assistant:** ${truncate(t.assistant_content, 2500)}`);
     if (t.tool_calls?.length) {
-      const toolNames = JSON.parse(t.tool_calls).map((tc: { name: string }) => tc.name);
+      const parsed = typeof t.tool_calls === 'string' ? JSON.parse(t.tool_calls) : t.tool_calls;
+      const toolNames = parsed.map((tc: { name: string }) => tc.name);
       if (toolNames.length) lines.push(`**Tools:** ${toolNames.join(', ')}`);
     }
   }
@@ -237,4 +273,12 @@ async function handleIngest(args: Record<string, unknown>): Promise<string> {
 
 function truncate(s: string, max: number): string {
   return s.length > max ? s.slice(0, max) + '...' : s;
+}
+
+function formatDuration(ms: number): string {
+  const mins = Math.floor(ms / 60000);
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  return remMins > 0 ? `${hours}h ${remMins}m` : `${hours}h`;
 }

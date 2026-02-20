@@ -9,6 +9,7 @@ export interface AnamnesisConfig {
   exclude_projects: string[];
   exclude_sessions: string[];
   transcripts_root: string;
+  search_mode: 'hybrid' | 'vector';
   database: {
     host: string;
     port: number;
@@ -19,12 +20,17 @@ export interface AnamnesisConfig {
     url: string;
     model: string;
   };
+  topic_model: {
+    url: string;
+    model: string;
+  };
 }
 
 const DEFAULT_CONFIG: AnamnesisConfig = {
   exclude_projects: [],
   exclude_sessions: [],
   transcripts_root: 'C:/Users/clay/.claude/projects',
+  search_mode: 'hybrid',
   database: {
     host: 'localhost',
     port: 5432,
@@ -34,6 +40,10 @@ const DEFAULT_CONFIG: AnamnesisConfig = {
   ollama: {
     url: 'http://localhost:11434',
     model: 'bge-m3',
+  },
+  topic_model: {
+    url: 'http://localhost:11434',
+    model: 'gemma3:12b',
   },
 };
 
@@ -45,7 +55,7 @@ export function getConfig(): AnamnesisConfig {
   const configPath = resolve(PROJECT_ROOT, 'anamnesis.config.json');
   if (existsSync(configPath)) {
     const raw = JSON.parse(readFileSync(configPath, 'utf-8'));
-    _config = { ...DEFAULT_CONFIG, ...raw, database: { ...DEFAULT_CONFIG.database, ...raw.database }, ollama: { ...DEFAULT_CONFIG.ollama, ...raw.ollama } };
+    _config = { ...DEFAULT_CONFIG, ...raw, database: { ...DEFAULT_CONFIG.database, ...raw.database }, ollama: { ...DEFAULT_CONFIG.ollama, ...raw.ollama }, topic_model: { ...DEFAULT_CONFIG.topic_model, ...raw.topic_model } };
   } else {
     _config = DEFAULT_CONFIG;
   }

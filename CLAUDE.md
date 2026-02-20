@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Anamnesis** is a persistent semantic memory system for Claude Code sessions. It parses JSONL conversation transcripts, embeds them with bge-m3, stores them in PostgreSQL+pgvector, and exposes them via MCP tools for future session context retrieval.
 
-**Status:** Phases 1-5 complete. MCP server registered, SessionEnd hook active, CLI functional. Backfill pending.
+**Status:** Phases 1-7 complete. MCP server registered, SessionEnd hook active, SessionStart recall hook active, CLI functional. Backfill done (243 sessions, 4745 turns).
 
 ## Architecture
 
@@ -59,6 +59,7 @@ node dist/index.js stats                 # Database statistics
 | Transcripts | `C:/Users/clay/.claude/projects/` | JSONL files |
 | MCP server | Registered in `~/.claude.json` | stdio transport |
 | SessionEnd hook | `~/.claude/settings.json` | Auto-ingest on session end |
+| SessionStart hook | `~/.claude/hooks/anamnesis-recall.py` | Proactive recall at session start |
 | Scheduled task | `scripts/setup-scheduled-task.ps1` | Every 15 min (needs admin setup) |
 
 ## Design Decisions

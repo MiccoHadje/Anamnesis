@@ -1,33 +1,25 @@
 # Create Windows Scheduled Task for Anamnesis ingestion (every 15 minutes)
-# Run as Administrator: powershell -ExecutionPolicy Bypass -File scripts/setup-scheduled-task.ps1
+# Run as Administrator: powershell -ExecutionPolicy Bypass -File D:\Projects\Anamnesis\scripts\setup-scheduled-task.ps1
 
-$action = New-ScheduledTaskAction `
-    -Execute "node" `
-    -Argument "D:\Projects\Anamnesis\dist\index.js ingest-all" `
-    -WorkingDirectory "D:\Projects\Anamnesis"
+# Delete existing task if present
+schtasks /Delete /TN "Anamnesis Ingest" /F 2>$null
 
-$trigger = New-ScheduledTaskTrigger `
-    -Once `
-    -At (Get-Date) `
-    -RepetitionInterval (New-TimeSpan -Minutes 15) `
-    -RepetitionDuration ([timespan]::MaxValue)
+# Create with 15-minute repetition using schtasks (bypasses PowerShell cmdlet quirks)
+schtasks /Create `
+    /TN "Anamnesis Ingest" `
+    /TR "node D:\Projects\Anamnesis\dist\index.js ingest-all" `
+    /SC MINUTE /MO 15 `
+    /SD (Get-Date -Format "MM/dd/yyyy") `
+    /ST "00:00" `
+    /RL LIMITED `
+    /F
 
-$settings = New-ScheduledTaskSettingsSet `
-    -StartWhenAvailable `
-    -DontStopOnIdleEnd `
-    -AllowStartIfOnBatteries `
-    -DontStopIfGoingOnBatteries `
-    -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
-
-Register-ScheduledTask `
-    -TaskName "Anamnesis Ingest" `
-    -Description "Ingest new Claude Code transcripts into Anamnesis every 15 minutes" `
-    -Action $action `
-    -Trigger $trigger `
-    -Settings $settings `
-    -User $env:USERNAME `
-    -RunLevel Highest `
-    -Force
-
-Write-Host "Scheduled task 'Anamnesis Ingest' created successfully."
-Write-Host "It will run every 15 minutes to discover and ingest new transcripts."
+if ($LASTEXITCODE -eq 0) {
+    Write-Host ""
+    Write-Host "Scheduled task 'Anamnesis Ingest' created successfully." -ForegroundColor Green
+    Write-Host "Runs every 15 minutes to discover and ingest new transcripts."
+    Write-Host ""
+    schtasks /Query /TN "Anamnesis Ingest" /V /FO LIST | Select-String "Task Name|Status|Schedule|Next Run|Repeat"
+} else {
+    Write-Host "Failed to create scheduled task." -ForegroundColor Red
+}

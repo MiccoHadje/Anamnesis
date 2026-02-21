@@ -7,7 +7,7 @@ schtasks /Delete /TN "Anamnesis Ingest" /F 2>$null
 # Create with 15-minute repetition using schtasks (bypasses PowerShell cmdlet quirks)
 schtasks /Create `
     /TN "Anamnesis Ingest" `
-    /TR "node D:\Projects\Anamnesis\dist\index.js ingest-all" `
+    /TR "wscript.exe `"D:\Projects\Anamnesis\scripts\silent-ingest.vbs`"" `
     /SC MINUTE /MO 15 `
     /SD (Get-Date -Format "MM/dd/yyyy") `
     /ST "00:00" `

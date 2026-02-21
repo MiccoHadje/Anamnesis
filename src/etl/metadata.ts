@@ -54,10 +54,11 @@ export function extractSessionMetadata(
     }
   }
 
-  // Derive project name from the file path's parent directory name
+  // Derive project name from the file path's project directory
   // e.g., C:/Users/clay/.claude/projects/d--Projects-RPGDash/abc123.jsonl → d--Projects-RPGDash
-  const projectDir = basename(dirname(filePath));
-  const projectName = projectDir !== 'projects' ? friendlyProjectName(projectDir) : undefined;
+  // For subagents: .../d--Projects-HG/<uuid>/subagents/agent-xyz.jsonl → d--Projects-HG
+  const projectDir = deriveProjectDir(filePath);
+  const projectName = projectDir && projectDir !== 'projects' ? friendlyProjectName(projectDir) : undefined;
 
   // Check if subagent (file is in a subagents/ directory)
   const isSubagent = filePath.includes('/subagents/') || filePath.includes('\\subagents\\');
@@ -102,6 +103,21 @@ function friendlyProjectName(dirName: string): string {
   if (driveMatch) return driveMatch[1];
 
   return dirName;
+}
+
+/**
+ * Derive the project directory name from a file path.
+ * For top-level files: .../projects/<project-dir>/abc.jsonl → <project-dir>
+ * For subagents: .../projects/<project-dir>/<uuid>/subagents/agent.jsonl → <project-dir>
+ */
+function deriveProjectDir(filePath: string): string | undefined {
+  const normalized = filePath.replace(/\\/g, '/');
+  const parts = normalized.split('/');
+  const projectsIdx = parts.indexOf('projects');
+  if (projectsIdx >= 0 && projectsIdx + 1 < parts.length) {
+    return parts[projectsIdx + 1];
+  }
+  return basename(dirname(filePath));
 }
 
 /**

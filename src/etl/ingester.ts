@@ -61,7 +61,7 @@ export async function ingestFile(
 
   // Generate embeddings
   log(`  Embedding ${embTexts.length} turns...`);
-  const embeddings = await embedBatch(embTexts, 4, (done, total) => {
+  const embeddings = await embedBatch(embTexts, undefined, (done, total) => {
     if (done % 10 === 0 || done === total) {
       log(`  Embedded ${done}/${total}`);
     }

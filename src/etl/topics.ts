@@ -108,7 +108,7 @@ export async function backfillTopics(
   opts?: { batchSize?: number; concurrency?: number; onProgress?: (done: number, total: number, sessionId: string, project: string, tagCount: number) => void }
 ): Promise<{ processed: number; failed: number; skipped: number }> {
   const batchSize = opts?.batchSize || 10;
-  const concurrency = opts?.concurrency || 2;
+  const concurrency = opts?.concurrency || getConfig().concurrency.topics;
   const log = opts?.onProgress;
 
   let processed = 0;

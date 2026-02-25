@@ -24,6 +24,10 @@ export interface AnamnesisConfig {
     url: string;
     model: string;
   };
+  concurrency: {
+    embedding: number;
+    topics: number;
+  };
 }
 
 const DEFAULT_CONFIG: AnamnesisConfig = {
@@ -45,6 +49,10 @@ const DEFAULT_CONFIG: AnamnesisConfig = {
     url: 'http://localhost:11434',
     model: 'gemma3:12b',
   },
+  concurrency: {
+    embedding: 4,
+    topics: 2,
+  },
 };
 
 let _config: AnamnesisConfig | null = null;
@@ -55,7 +63,7 @@ export function getConfig(): AnamnesisConfig {
   const configPath = resolve(PROJECT_ROOT, 'anamnesis.config.json');
   if (existsSync(configPath)) {
     const raw = JSON.parse(readFileSync(configPath, 'utf-8'));
-    _config = { ...DEFAULT_CONFIG, ...raw, database: { ...DEFAULT_CONFIG.database, ...raw.database }, ollama: { ...DEFAULT_CONFIG.ollama, ...raw.ollama }, topic_model: { ...DEFAULT_CONFIG.topic_model, ...raw.topic_model } };
+    _config = { ...DEFAULT_CONFIG, ...raw, database: { ...DEFAULT_CONFIG.database, ...raw.database }, ollama: { ...DEFAULT_CONFIG.ollama, ...raw.ollama }, topic_model: { ...DEFAULT_CONFIG.topic_model, ...raw.topic_model }, concurrency: { ...DEFAULT_CONFIG.concurrency, ...raw.concurrency } };
   } else {
     _config = DEFAULT_CONFIG;
   }

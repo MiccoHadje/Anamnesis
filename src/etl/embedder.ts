@@ -99,9 +99,10 @@ export async function embed(text: string, maxRetries = 3): Promise<number[]> {
  */
 export async function embedBatch(
   texts: string[],
-  concurrency = 2,
+  concurrency?: number,
   onProgress?: (done: number, total: number) => void
 ): Promise<number[][]> {
+  concurrency = concurrency ?? getConfig().concurrency.embedding;
   const results: number[][] = new Array(texts.length);
   let done = 0;
 

@@ -1,4 +1,5 @@
 import { getConfig } from '../../util/config.js';
+import { createTaskProvider } from '../../tasks/index.js';
 import { generateProjectReport, generateCrossProjectReport } from '../daily-report.js';
 
 export async function handleDailyReport(args: Record<string, unknown>): Promise<string> {
@@ -15,23 +16,30 @@ export async function handleDailyReport(args: Record<string, unknown>): Promise<
     return d.toISOString().split('T')[0];
   })();
 
-  const projectName = args.project as string | undefined;
+  // Create task provider (optional — null if not configured)
+  const taskProvider = createTaskProvider(config);
 
-  if (projectName) {
-    // Find matching project in config
-    const proj = config.reporting.projects.find(
-      p => p.name.toLowerCase() === projectName.toLowerCase() ||
-           p.anamnesis_project.toLowerCase() === projectName.toLowerCase()
-    );
-    if (!proj) {
-      const available = config.reporting.projects.map(p => p.name).join(', ');
-      return `Error: Project "${projectName}" not found in reporting config. Available: ${available}`;
+  try {
+    const projectName = args.project as string | undefined;
+
+    if (projectName) {
+      // Find matching project in config
+      const proj = config.reporting.projects.find(
+        p => p.name.toLowerCase() === projectName.toLowerCase() ||
+             p.anamnesis_project.toLowerCase() === projectName.toLowerCase()
+      );
+      if (!proj) {
+        const available = config.reporting.projects.map(p => p.name).join(', ');
+        return `Error: Project "${projectName}" not found in reporting config. Available: ${available}`;
+      }
+      const report = await generateProjectReport(date, proj.name, proj.anamnesis_project, taskProvider ?? undefined, proj.nudge_project);
+      return report || `No activity found for ${proj.name} on ${date}.`;
     }
-    const report = await generateProjectReport(date, proj.name, proj.anamnesis_project);
-    return report || `No activity found for ${proj.name} on ${date}.`;
-  }
 
-  // Cross-project report
-  const report = await generateCrossProjectReport(date, config.reporting.projects);
-  return report;
+    // Cross-project report
+    const report = await generateCrossProjectReport(date, config.reporting.projects, taskProvider ?? undefined);
+    return report;
+  } finally {
+    await taskProvider?.close?.();
+  }
 }

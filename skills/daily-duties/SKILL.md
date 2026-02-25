@@ -12,7 +12,7 @@ Grounds the session with the current date/time, then generates per-project daily
 
 - Anamnesis MCP server running with `anamnesis_daily_report` tool available
 - `reporting` section configured in `anamnesis.config.json` (see `anamnesis.config.example.json`)
-- Optional: [Nudge](https://github.com/MiccoHadje/Nudge) MCP server for task completion data
+- Optional: `tasks` section in config for task completion data (Nudge DB or filesystem)
 
 ## Invocation
 
@@ -115,7 +115,7 @@ If the tool returns data, use it to write a daily log to `{project_path}/{daily_
 
 **If `anamnesis_daily_report` returns no activity for a project on a given day, do NOT create a file.** The cross-project report (Step 3) records inactive projects.
 
-Optional enhancement: If `nudge_history` MCP tool is available, supplement with task completion data filtered to the project's `nudge_project` tag.
+**Task data**: When a `tasks` provider is configured in `anamnesis.config.json`, the `anamnesis_daily_report` MCP tool automatically includes task completions, started counts, and blocked counts in its output. No separate `nudge_history` call is needed.
 
 ### Step 3: Generate Cross-Project Reports
 

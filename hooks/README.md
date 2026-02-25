@@ -59,6 +59,33 @@ When Claude enters plan mode, this hook searches Anamnesis using the user's plan
 }
 ```
 
+### pre-compact-ingest.py — State capture + ingestion before compaction
+
+When Claude Code's context window fills and compaction occurs, this hook:
+1. Reads the tail of the transcript to extract key state (files modified, recent commands, errors)
+2. Triggers Anamnesis ingestion of the current session in the background (non-blocking)
+3. Injects a continuation prompt so the post-compaction model retains tactical context
+
+This is the bridge between compaction and memory. Without it, everything discussed before compaction is lost until SessionEnd fires. With it, the transcript is searchable in Anamnesis immediately after compaction.
+
+**Install:**
+1. Copy to `~/.claude/hooks/pre-compact-ingest.py`
+2. Edit `ANAMNESIS_DIR` at the top of the file to point to your Anamnesis installation
+3. Add to `~/.claude/settings.json`:
+```json
+{
+  "hooks": {
+    "PreCompact": [
+      {
+        "type": "command",
+        "command": "python ~/.claude/hooks/pre-compact-ingest.py",
+        "timeout": 10000
+      }
+    ]
+  }
+}
+```
+
 ## Configuration
 
 All hooks read configuration from environment variables:

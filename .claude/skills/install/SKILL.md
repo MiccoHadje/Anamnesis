@@ -210,13 +210,14 @@ psql -d anamnesis -c "CREATE INDEX idx_sessions_embedding ON anamnesis_sessions 
 
 Ask the user which hooks they want:
 
-> Anamnesis has three optional hooks that automate ingestion and add proactive recall:
+> Anamnesis has four optional hooks that automate ingestion and add proactive recall:
 >
 > 1. **SessionEnd auto-ingest** — Ingests transcripts when you end a session (recommended)
 > 2. **SessionStart recall** — Injects recent project context when you start a session (recommended, needs Python + psycopg2)
 > 3. **Plan-mode recall** — Searches history when you enter plan mode (recommended, needs Python + psycopg2)
+> 4. **PreCompact state capture** — Captures state + ingests transcript before context compaction (recommended, needs Python)
 >
-> Which hooks would you like to install? (1, 2, 3, all, or none)
+> Which hooks would you like to install? (1, 2, 3, 4, all, or none)
 
 For each selected hook:
 
@@ -250,6 +251,19 @@ For each selected hook:
      "command": "python ~/.claude/hooks/plan-recall.py",
      "timeout": 10000,
      "matcher": { "tool_name": "EnterPlanMode" }
+   }
+   ```
+
+6. **PreCompact state capture:** Copy `hooks/pre-compact-ingest.py` to `~/.claude/hooks/pre-compact-ingest.py`. Then determine the absolute path to the Anamnesis installation:
+   ```bash
+   node -e "console.log(require('path').resolve('.'))"
+   ```
+   Edit `ANAMNESIS_DIR` at the top of the copied file to use this path (forward slashes, even on Windows). Then add to `hooks.PreCompact` array:
+   ```json
+   {
+     "type": "command",
+     "command": "python ~/.claude/hooks/pre-compact-ingest.py",
+     "timeout": 10000
    }
    ```
 
@@ -314,7 +328,7 @@ Anamnesis Health Check
   Ollama           ✓  bge-m3 loaded
   Database         ✓  {N} sessions, {M} turns, {L} links
   MCP server       ✓  registered, build current
-  Hooks            ✓  SessionEnd, SessionStart, PreToolUse
+  Hooks            ✓  SessionEnd, SessionStart, PreToolUse, PreCompact
   HNSW indexes     ✓  2 active
   Config           ✓  valid
   Search           ✓  returning results

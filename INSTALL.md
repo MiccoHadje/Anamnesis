@@ -340,6 +340,24 @@ Searches Anamnesis when Claude enters plan mode, injecting relevant historical c
 }
 ```
 
+### PreCompact — State capture + mid-session ingestion (Python)
+
+Captures session state and triggers Anamnesis ingestion before context compaction. This is the bridge between compaction and memory — without it, pre-compaction context isn't in Anamnesis until SessionEnd.
+
+1. Copy `hooks/pre-compact-ingest.py` to `~/.claude/hooks/pre-compact-ingest.py`
+2. Edit `ANAMNESIS_DIR` at the top of the copied file to point to your Anamnesis installation
+3. Add to `~/.claude/settings.json` under `hooks.PreCompact`:
+
+```json
+{
+  "type": "command",
+  "command": "python ~/.claude/hooks/pre-compact-ingest.py",
+  "timeout": 10000
+}
+```
+
+> **Note for Claude:** The `ANAMNESIS_DIR` constant in the script must be set to the absolute path of the Anamnesis installation (e.g., `D:/Projects/Anamnesis` or `/home/user/Anamnesis`). Use forward slashes even on Windows.
+
 ### Merging hooks into settings.json
 
 If you're installing multiple hooks, your `~/.claude/settings.json` should look like:
@@ -367,6 +385,13 @@ If you're installing multiple hooks, your `~/.claude/settings.json` should look 
         "command": "python ~/.claude/hooks/plan-recall.py",
         "timeout": 10000,
         "matcher": { "tool_name": "EnterPlanMode" }
+      }
+    ],
+    "PreCompact": [
+      {
+        "type": "command",
+        "command": "python ~/.claude/hooks/pre-compact-ingest.py",
+        "timeout": 10000
       }
     ]
   }

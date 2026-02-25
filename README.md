@@ -174,6 +174,7 @@ Example hooks are provided in the `hooks/` directory:
 | `session-end.json` | SessionEnd | Auto-ingest transcripts when a session ends |
 | `session-start-recall.py` | SessionStart | Inject recent project context at session start |
 | `plan-recall.py` | PreToolUse (EnterPlanMode) | Search Anamnesis when entering plan mode |
+| `pre-compact-ingest.py` | PreCompact | Capture state + ingest transcript before context compaction |
 
 See [`hooks/README.md`](hooks/README.md) for installation instructions.
 

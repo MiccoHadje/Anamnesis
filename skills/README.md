@@ -26,7 +26,7 @@ Guided setup and health check. Detects what's already installed and adapts:
 
 **Usage:** Type `/anamnesis_install` in a Claude Code session opened in the Anamnesis project directory.
 
-See `install/SKILL.md` for full documentation.
+This skill lives in `.claude/skills/install/` (committed to the repo) so it works immediately on clone — no manual installation needed.
 
 ### `/daily_duties`
 

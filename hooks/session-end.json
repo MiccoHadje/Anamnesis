@@ -1,0 +1,7 @@
+{
+  "_comment": "Add this object to the 'hooks.SessionEnd' array in ~/.claude/settings.json",
+  "type": "command",
+  "command": "node /path/to/Anamnesis/dist/index.js ingest-session",
+  "timeout": 30000,
+  "statusMessage": "Saving to Anamnesis..."
+}

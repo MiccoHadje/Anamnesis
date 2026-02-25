@@ -1,113 +1,102 @@
 # Anamnesis
 
-Persistent semantic memory for Claude Code sessions. Parses JSONL conversation transcripts, embeds them with bge-m3, stores them in PostgreSQL+pgvector, and exposes them via MCP tools so future sessions can semantically search past conversations.
+> *The recollection of knowledge the soul possessed before birth. Memory not as record but as recovery.*
 
-## Architecture
+**Persistent semantic memory for Claude Code sessions.** Parses JSONL conversation transcripts, embeds them with bge-m3, stores them in PostgreSQL+pgvector, and exposes them via MCP tools so future sessions can semantically search past conversations.
+
+## Features
+
+- **Semantic search** — Find past sessions by meaning, not just keywords
+- **Hybrid search** — Combines vector similarity with full-text keyword search (RRF fusion)
+- **Auto-ingestion** — SessionEnd hook + scheduled task keep the database current
+- **Auto-linking** — Sessions are linked by shared files, semantic similarity, and topic overlap
+- **Topic extraction** — Auto-generated tags and summaries per session via local LLM
+- **Proactive recall** — Session-start hook injects relevant context automatically
+- **Daily reporting** — MCP tool + skill for cross-project daily/weekly/monthly reports
+
+## How It Works
 
 ```
-Claude Code JSONL transcripts (C:/Users/clay/.claude/projects/**/*.jsonl)
-  |
-  v
-ETL Pipeline (TypeScript)
-  parse turns -> extract metadata -> chunk user+assistant pairs
-  |
-  v
-Ollama bge-m3 (localhost:11434) -> 1024-dim vector embeddings
-  |
-  v
-PostgreSQL + pgvector (localhost) -> anamnesis database
-  |     - anamnesis_sessions (session metadata, tags, summary)
-  |     - anamnesis_turns (user+assistant pairs with embeddings)
-  |     - anamnesis_session_links (auto-links: file overlap, semantic, topic)
-  |     - anamnesis_ingested_files (idempotency tracking)
-  |
-  v
-MCP Server (stdio) -> anamnesis_search, anamnesis_recent, anamnesis_session, anamnesis_ingest
+Claude Code JSONL transcripts (~/.claude/projects/**/*.jsonl)
+  → ETL Pipeline (TypeScript) — parse, chunk, extract metadata
+  → Ollama bge-m3 — 1024-dim vector embeddings
+  → PostgreSQL + pgvector — semantic search + full-text search
+  → MCP Server (stdio) — 5 tools for search, browsing, ingestion, reporting
 ```
+
+Each conversation turn (user message + assistant response) becomes a searchable unit with its own embedding. Sessions are enriched with metadata (project, files touched, tools used, timestamps) and linked to related sessions.
+
+## Prerequisites
+
+- **Node.js** 18+
+- **PostgreSQL** with [pgvector](https://github.com/pgvector/pgvector) extension
+- **Ollama** with models:
+  - `bge-m3` — embeddings (required)
+  - `gemma3:12b` — topic extraction (optional)
 
 ## Quick Start
 
-### Prerequisites
-
-- **Node.js** 18+
-- **PostgreSQL** with pgvector extension
-- **Ollama** with models:
-  - `bge-m3` (embeddings)
-  - `gemma3:12b` (topic extraction, optional)
-
-### Setup
-
 ```bash
-# 1. Clone and install
-git clone <repo-url>
+# Clone and install
+git clone https://github.com/MiccoHadje/Anamnesis.git
 cd Anamnesis
 npm install
-npm run build
 
-# 2. Create database
+# Create and initialize database
 createdb anamnesis
 psql -d anamnesis -f src/db/schema.sql
 
-# 3. Ensure Ollama models are available
+# Pull Ollama models
 ollama pull bge-m3
-ollama pull gemma3:12b  # optional, for topic extraction
+ollama pull gemma3:12b  # optional
 
-# 4. Edit config (optional — defaults work for standard setup)
-# See anamnesis.config.json
+# Copy and edit config
+cp anamnesis.config.example.json anamnesis.config.json
+# Edit anamnesis.config.json — set transcripts_root, database credentials
 
-# 5. Register MCP server in ~/.claude.json
-# See "MCP Registration" below
+# Build
+npm run build
 
-# 6. Add SessionEnd hook to ~/.claude/settings.json
-# See "Hook Setup" below
+# Register MCP server (see "MCP Registration" below)
 
-# 7. Run initial backfill
+# Run initial backfill
 node dist/index.js backfill
 
-# 8. Create HNSW indexes (after initial data load)
+# Create HNSW indexes (after initial data load for better performance)
 psql -d anamnesis -c "CREATE INDEX idx_turns_embedding ON anamnesis_turns USING hnsw (embedding vector_cosine_ops);"
 psql -d anamnesis -c "CREATE INDEX idx_sessions_embedding ON anamnesis_sessions USING hnsw (session_embedding vector_cosine_ops);"
 
-# 9. Run topic backfill (optional, requires gemma3:12b)
+# Optional: extract topics
 node dist/index.js backfill-topics
 
-# 10. Verify
+# Verify
 node dist/index.js stats
 ```
 
-## CLI Commands
-
-| Command | Description |
-|---------|-------------|
-| `node dist/index.js ingest-session [id]` | Ingest a session (used by SessionEnd hook) |
-| `node dist/index.js ingest <file>` | Ingest a single JSONL transcript |
-| `node dist/index.js ingest-all` | Discover and ingest all new/changed transcripts |
-| `node dist/index.js backfill` | Full backfill of all transcripts |
-| `node dist/index.js backfill-topics` | Extract tags/summaries for sessions missing them |
-| `node dist/index.js search <query>` | Semantic search across all turns |
-| `node dist/index.js stats` | Show database statistics |
-
-Options:
-- `--force` — Force re-ingestion even if already processed (for `ingest` and `ingest-all`)
-
 ## Configuration
 
-`anamnesis.config.json`:
+Create `anamnesis.config.json` from the example file. All settings can also be overridden with environment variables.
 
-| Field | Default | Description |
-|-------|---------|-------------|
-| `exclude_projects` | `[]` | Project directory names to skip |
-| `exclude_sessions` | `[]` | Specific session UUIDs to skip |
-| `transcripts_root` | `C:/Users/clay/.claude/projects` | Where to find JSONL transcripts |
-| `search_mode` | `hybrid` | Default search mode: `hybrid` or `vector` |
-| `database.host` | `localhost` | PostgreSQL host |
-| `database.port` | `5432` | PostgreSQL port |
-| `database.database` | `anamnesis` | Database name |
-| `database.user` | `clay` | Database user |
-| `ollama.url` | `http://localhost:11434` | Ollama server URL |
-| `ollama.model` | `bge-m3` | Embedding model |
-| `topic_model.url` | `http://localhost:11434` | Topic extraction Ollama URL |
-| `topic_model.model` | `gemma3:12b` | Topic extraction model |
+| Field | Default | Env Override | Description |
+|-------|---------|-------------|-------------|
+| `transcripts_root` | (required) | `ANAMNESIS_TRANSCRIPTS_ROOT` | Path to Claude Code transcripts (e.g., `~/.claude/projects`) |
+| `search_mode` | `hybrid` | — | Default search: `hybrid` or `vector` |
+| `database.host` | `localhost` | `ANAMNESIS_DB_HOST` | PostgreSQL host |
+| `database.port` | `5432` | `ANAMNESIS_DB_PORT` | PostgreSQL port |
+| `database.database` | `anamnesis` | `ANAMNESIS_DB_NAME` | Database name |
+| `database.user` | `anamnesis` | `ANAMNESIS_DB_USER` | Database user |
+| `database.password` | (empty) | `ANAMNESIS_DB_PASSWORD` | Database password (omit for trust/peer auth) |
+| `ollama.url` | `http://localhost:11434` | `ANAMNESIS_OLLAMA_URL` | Ollama server URL |
+| `ollama.model` | `bge-m3` | — | Embedding model |
+| `topic_model.model` | `gemma3:12b` | — | Topic extraction model |
+| `exclude_projects` | `[]` | — | Project directory names to skip |
+| `exclude_sessions` | `[]` | — | Specific session UUIDs to skip |
+| `concurrency.embedding` | `4` | — | Parallel embedding requests |
+| `concurrency.topics` | `2` | — | Parallel topic extraction requests |
+
+Tilde (`~`) in `transcripts_root` is resolved to the user's home directory.
+
+**Priority:** Environment variables > `anamnesis.config.json` > defaults.
 
 ## MCP Tools
 
@@ -152,30 +141,30 @@ Trigger ingestion of transcript files.
 | `session_id` | string | no | Specific session to ingest |
 | `force` | boolean | no | Force re-ingestion |
 
-## Hook Setup
+### `anamnesis_daily_report`
 
-### SessionEnd Hook (auto-ingest)
+Generate a daily activity report from session data.
 
-Add to `~/.claude/settings.json` in the `hooks.SessionEnd` array:
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `date` | string | no | Date (YYYY-MM-DD, default yesterday) |
+| `project` | string | no | Project name (omit for cross-project summary) |
 
-```json
-{
-  "type": "command",
-  "command": "node D:/Projects/Anamnesis/dist/index.js ingest-session",
-  "timeout": 30000,
-  "statusMessage": "Saving to Anamnesis..."
-}
-```
+Requires the `reporting` section in config. See `anamnesis.config.example.json`.
 
-### SessionStart Hook (proactive recall)
+## CLI Commands
 
-Place `anamnesis-recall.py` in `~/.claude/hooks/`:
+| Command | Description |
+|---------|-------------|
+| `node dist/index.js ingest-session [id]` | Ingest a session (used by SessionEnd hook) |
+| `node dist/index.js ingest <file>` | Ingest a single JSONL transcript |
+| `node dist/index.js ingest-all` | Discover and ingest all new/changed transcripts |
+| `node dist/index.js backfill` | Full backfill of all transcripts |
+| `node dist/index.js backfill-topics` | Extract tags/summaries for sessions missing them |
+| `node dist/index.js search <query>` | Semantic search from the command line |
+| `node dist/index.js stats` | Show database statistics |
 
-```python
-# See hooks/anamnesis-recall.py in this repo for the full implementation
-```
-
-This hook searches Anamnesis at session start and injects relevant context.
+Add `--force` to `ingest` or `ingest-all` to re-process already-ingested files.
 
 ## MCP Registration
 
@@ -185,13 +174,45 @@ Add to `~/.claude.json` under `mcpServers`:
 {
   "anamnesis": {
     "command": "node",
-    "args": ["D:/Projects/Anamnesis/dist/mcp/index.js"],
+    "args": ["/path/to/Anamnesis/dist/mcp/index.js"],
     "env": {}
   }
 }
 ```
 
-## Database Tables
+## Hooks
+
+Example hooks are provided in the `hooks/` directory:
+
+| Hook | Trigger | Purpose |
+|------|---------|---------|
+| `session-end.json` | SessionEnd | Auto-ingest transcripts when a session ends |
+| `session-start-recall.py` | SessionStart | Inject recent project context at session start |
+| `plan-recall.py` | PreToolUse (EnterPlanMode) | Search Anamnesis when entering plan mode |
+
+See [`hooks/README.md`](hooks/README.md) for installation instructions.
+
+## Skills
+
+Claude Code skills for higher-level workflows are in the `skills/` directory:
+
+| Skill | Description |
+|-------|-------------|
+| `/daily_duties` | Generate per-project daily logs, cross-project reports, weekly retros, and monthly highlights |
+
+See [`skills/README.md`](skills/README.md) for installation instructions.
+
+## How Search Works
+
+Anamnesis offers two search modes:
+
+**Vector search** — Embeds your query with bge-m3 and finds the most similar conversation turns by cosine distance. Good for conceptual/semantic queries.
+
+**Hybrid search** (default) — Combines vector similarity with PostgreSQL full-text search using Reciprocal Rank Fusion (RRF). Includes a recency boost. Better for queries mixing concepts with specific terms.
+
+Both modes enforce a minimum similarity threshold (0.3) to filter noise.
+
+## Database Schema
 
 | Table | Purpose |
 |-------|---------|
@@ -208,24 +229,34 @@ Three layers of automatic session linking:
 2. **Semantic similarity** — Compare averaged session embeddings. Links top 5 above 0.5 threshold.
 3. **Topic overlap** — Sessions sharing 2+ extracted tags. Score = Jaccard similarity.
 
+Related sessions surface in `anamnesis_session` results.
+
+## Daily Reporting
+
+The `anamnesis_daily_report` MCP tool and `/daily_duties` skill work together for cross-project reporting:
+
+- The **MCP tool** queries the database and returns structured markdown reports
+- The **skill** orchestrates a full reporting workflow: gap detection, per-project logs, cross-project summaries, weekly retros, monthly highlights
+
+Configure the `reporting` section in `anamnesis.config.json` with your projects. Optionally integrate with [Nudge](https://github.com/MiccoHadje/Nudge) for task completion data.
+
+## Scheduled Ingestion (Windows)
+
+For Windows users, `scripts/setup-scheduled-task.ps1` creates a Windows Scheduled Task that runs `ingest-all` every 15 minutes. This catches sessions where the SessionEnd hook didn't fire.
+
+```powershell
+# Run as Administrator
+powershell -ExecutionPolicy Bypass -File scripts/setup-scheduled-task.ps1
+```
+
 ## Development
 
 ```bash
-npm run build    # TypeScript -> dist/
-npm run dev      # Watch mode (tsx)
+npm run build    # TypeScript → dist/
+npm run dev      # Run with tsx (no build step)
+npm test         # Run tests
 ```
 
-## Adding Anamnesis to a New Machine
+## License
 
-1. Install prerequisites: Node.js 18+, PostgreSQL + pgvector, Ollama
-2. Pull Ollama models: `ollama pull bge-m3 && ollama pull gemma3:12b`
-3. Clone repo: `git clone <repo> && cd Anamnesis && npm install && npm run build`
-4. Create database: `createdb anamnesis && psql -d anamnesis -f src/db/schema.sql`
-5. Edit `anamnesis.config.json` — set `transcripts_root`, database credentials
-6. Register MCP server in `~/.claude.json` (see above)
-7. Add SessionEnd hook to `~/.claude/settings.json` (see above)
-8. Add SessionStart recall hook (see above)
-9. Run initial backfill: `node dist/index.js backfill`
-10. Create HNSW indexes (see Quick Start step 8)
-11. Run topic backfill: `node dist/index.js backfill-topics`
-12. Verify: `node dist/index.js stats`
+[GPL-3.0](LICENSE) — Copyright 2026 Clay Mahaffey / Canoic LLC

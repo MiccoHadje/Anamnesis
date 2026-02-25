@@ -14,6 +14,7 @@ export function getPool(): pg.Pool {
     port: database.port,
     database: database.database,
     user: database.user,
+    ...(database.password ? { password: database.password } : {}),
     max: 10,
   });
   return _pool;

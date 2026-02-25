@@ -1,6 +1,7 @@
 import { readFileSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { homedir } from 'os';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, '..', '..');
@@ -58,6 +59,40 @@ const DEFAULT_CONFIG: AnamnesisConfig = {
 
 let _config: AnamnesisConfig | null = null;
 
+/** Resolve ~ or ~/ at the start of a path to the user's home directory. */
+function resolveTilde(p: string): string {
+  if (p === '~') return homedir();
+  if (p.startsWith('~/') || p.startsWith('~\\')) {
+    return resolve(homedir(), p.slice(2));
+  }
+  return p;
+}
+
+/** Apply environment variable overrides (highest priority). */
+function applyEnvOverrides(config: AnamnesisConfig): void {
+  if (process.env.ANAMNESIS_TRANSCRIPTS_ROOT) {
+    config.transcripts_root = process.env.ANAMNESIS_TRANSCRIPTS_ROOT;
+  }
+  if (process.env.ANAMNESIS_DB_HOST) {
+    config.database.host = process.env.ANAMNESIS_DB_HOST;
+  }
+  if (process.env.ANAMNESIS_DB_PORT) {
+    config.database.port = parseInt(process.env.ANAMNESIS_DB_PORT, 10);
+  }
+  if (process.env.ANAMNESIS_DB_NAME) {
+    config.database.database = process.env.ANAMNESIS_DB_NAME;
+  }
+  if (process.env.ANAMNESIS_DB_USER) {
+    config.database.user = process.env.ANAMNESIS_DB_USER;
+  }
+  if (process.env.ANAMNESIS_DB_PASSWORD) {
+    config.database.password = process.env.ANAMNESIS_DB_PASSWORD;
+  }
+  if (process.env.ANAMNESIS_OLLAMA_URL) {
+    config.ollama.url = process.env.ANAMNESIS_OLLAMA_URL;
+  }
+}
+
 export function getConfig(): AnamnesisConfig {
   if (_config) return _config;
 
@@ -69,10 +104,19 @@ export function getConfig(): AnamnesisConfig {
     _config = DEFAULT_CONFIG;
   }
 
+  // Env vars override config file (highest priority)
+  applyEnvOverrides(_config!);
+
+  // Resolve ~ in transcripts_root
+  if (_config!.transcripts_root) {
+    _config!.transcripts_root = resolveTilde(_config!.transcripts_root);
+  }
+
   if (!_config!.transcripts_root) {
     throw new Error(
       'transcripts_root is not configured. Create anamnesis.config.json from anamnesis.config.example.json ' +
-      'and set transcripts_root to your Claude Code transcripts directory (e.g., ~/.claude/projects).'
+      'and set transcripts_root to your Claude Code transcripts directory (e.g., ~/.claude/projects), ' +
+      'or set the ANAMNESIS_TRANSCRIPTS_ROOT environment variable.'
     );
   }
 

@@ -1,0 +1,25 @@
+{
+  "transcripts_root": "~/.claude/projects",
+  "exclude_projects": [],
+  "exclude_sessions": [],
+  "search_mode": "hybrid",
+  "database": {
+    "host": "localhost",
+    "port": 5432,
+    "database": "anamnesis",
+    "user": "anamnesis",
+    "password": ""
+  },
+  "ollama": {
+    "url": "http://localhost:11434",
+    "model": "bge-m3"
+  },
+  "topic_model": {
+    "url": "http://localhost:11434",
+    "model": "gemma3:12b"
+  },
+  "concurrency": {
+    "embedding": 4,
+    "topics": 2
+  }
+}

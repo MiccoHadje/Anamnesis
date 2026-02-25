@@ -1,0 +1,25 @@
+import type { AnamnesisConfig } from '../util/config.js';
+import type { TaskProvider } from './interface.js';
+import { NudgeProvider } from './nudge.js';
+import { FileSystemProvider } from './filesystem.js';
+
+export type { TaskProvider, TaskCompletion } from './interface.js';
+
+/**
+ * Create a TaskProvider from config. Returns null if no tasks config
+ * or if the provider type is unrecognized.
+ */
+export function createTaskProvider(config: AnamnesisConfig): TaskProvider | null {
+  if (!config.tasks) return null;
+
+  switch (config.tasks.provider) {
+    case 'nudge':
+      if (!config.tasks.nudge) return null;
+      return new NudgeProvider(config.tasks.nudge);
+    case 'filesystem':
+      if (!config.tasks.filesystem) return null;
+      return new FileSystemProvider(config.tasks.filesystem);
+    default:
+      return null;
+  }
+}

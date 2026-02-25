@@ -1,3 +1,4 @@
+/** @internal — used only by PgStorage and migrate.ts */
 import pg from 'pg';
 import { getConfig } from '../util/config.js';
 

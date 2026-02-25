@@ -2,6 +2,12 @@
   "name": "anamnesis",
   "version": "1.0.0",
   "description": "Persistent semantic memory for Claude Code sessions",
+  "license": "GPL-3.0-only",
+  "author": "Clay Mahaffey <clay@mahaffey.org>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MiccoHadje/Anamnesis.git"
+  },
   "type": "module",
   "main": "dist/index.js",
   "scripts": {

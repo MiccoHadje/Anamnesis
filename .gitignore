@@ -4,3 +4,10 @@ dist/
 .env
 .env.local
 anamnesis.config.json
+
+# Developer-specific Claude Code files
+.claude/settings.local.json
+.claude/hooks/
+.claude/skills/
+docs/Anamnesis_Daily/
+docs/recipes/

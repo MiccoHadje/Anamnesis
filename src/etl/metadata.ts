@@ -1,6 +1,6 @@
 import type { RawMessage } from './parser.js';
 import type { Turn } from './chunker.js';
-import { basename, dirname } from 'path';
+import { basename } from 'path';
 
 export interface SessionMetadata {
   sessionId: string;
@@ -117,7 +117,7 @@ function deriveProjectDir(filePath: string): string | undefined {
   if (projectsIdx >= 0 && projectsIdx + 1 < parts.length) {
     return parts[projectsIdx + 1];
   }
-  return basename(dirname(filePath));
+  return undefined;
 }
 
 /**

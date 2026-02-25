@@ -16,6 +16,18 @@ cp -r skills/daily-duties ~/.claude/skills/
 
 ## Available Skills
 
+### `/anamnesis_install`
+
+Guided setup and health check. Detects what's already installed and adapts:
+
+- **Fresh install:** Walks through prerequisites, database, config, MCP registration, backfill, and hooks step-by-step.
+- **Partial install:** Picks up where you left off.
+- **Already installed:** Runs a health check — verifies all components are working and reports status.
+
+**Usage:** Type `/anamnesis_install` in a Claude Code session opened in the Anamnesis project directory.
+
+See `install/SKILL.md` for full documentation.
+
 ### `/daily_duties`
 
 Morning reporting workflow that generates per-project daily logs, cross-project summaries, weekly retrospectives, and monthly highlights from Anamnesis session data.

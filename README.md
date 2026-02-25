@@ -37,41 +37,26 @@ Each conversation turn (user message + assistant response) becomes a searchable 
 ## Quick Start
 
 ```bash
-# Clone and install
 git clone https://github.com/MiccoHadje/Anamnesis.git
 cd Anamnesis
 npm install
 
-# Create and initialize database
 createdb anamnesis
 psql -d anamnesis -f src/db/schema.sql
 
-# Pull Ollama models
 ollama pull bge-m3
-ollama pull gemma3:12b  # optional
 
-# Copy and edit config
 cp anamnesis.config.example.json anamnesis.config.json
-# Edit anamnesis.config.json — set transcripts_root, database credentials
+# Edit anamnesis.config.json — set database.user to your PostgreSQL username
 
-# Build
 npm run build
-
-# Register MCP server (see "MCP Registration" below)
-
-# Run initial backfill
 node dist/index.js backfill
-
-# Create HNSW indexes (after initial data load for better performance)
-psql -d anamnesis -c "CREATE INDEX idx_turns_embedding ON anamnesis_turns USING hnsw (embedding vector_cosine_ops);"
-psql -d anamnesis -c "CREATE INDEX idx_sessions_embedding ON anamnesis_sessions USING hnsw (session_embedding vector_cosine_ops);"
-
-# Optional: extract topics
-node dist/index.js backfill-topics
-
-# Verify
 node dist/index.js stats
 ```
+
+This gets you a working database. For the full walkthrough — including MCP registration, hooks, topic extraction, HNSW indexes, troubleshooting, and Claude Code integration — see **[INSTALL.md](INSTALL.md)**.
+
+Or let Claude guide you: open the project in Claude Code and type **`/anamnesis_install`**.
 
 ## Configuration
 
@@ -198,6 +183,7 @@ Claude Code skills for higher-level workflows are in the `skills/` directory:
 
 | Skill | Description |
 |-------|-------------|
+| `/anamnesis_install` | Guided setup and health check — walks through installation or verifies system health |
 | `/daily_duties` | Generate per-project daily logs, cross-project reports, weekly retros, and monthly highlights |
 
 See [`skills/README.md`](skills/README.md) for installation instructions.

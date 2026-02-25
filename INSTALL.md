@@ -145,8 +145,12 @@ cp anamnesis.config.example.json anamnesis.config.json
 | `database.password` | If you use password auth (not needed with trust/peer auth) |
 | `ollama.url` | If Ollama runs on a different machine (e.g., `http://192.168.1.10:11434`) |
 | `topic_model.model` | If you want a different model for topic extraction, or remove the section to skip topics |
+| `topic_model.strategy` | `full` (default) reads entire sessions. `first_message` only reads the first user message (faster, less accurate). |
+| `topic_model.preserve_words` | Words to protect from compression. Add project names that are common English words (e.g., `["dash", "key", "home"]`) or short abbreviations (e.g., `["HG", "AI"]`). See note below. |
 | `search_mode` | `hybrid` (default) is recommended. `vector` uses pure semantic search. |
 | `exclude_projects` | Directory names to skip (e.g., `["D--SomePrivateProject"]`) |
+
+> **Note on `preserve_words`:** Topic extraction compresses session text before sending it to the LLM by stripping common English words (pronouns, prepositions, common verbs, etc.). This achieves ~25% compression, meaning fewer LLM calls per session. However, if your project is named "Dash" or "State" or uses a short abbreviation like "HG", those words would be stripped from the input text. Adding them to `preserve_words` keeps them visible to the topic model. When in doubt, list your project names and any domain-specific terms that might collide with common English.
 
 ### Minimal config example
 
@@ -258,7 +262,7 @@ These indexes are created after the initial load because HNSW builds a better gr
 node dist/index.js backfill-topics
 ```
 
-This uses a local LLM (gemma3:12b by default) to generate 3-5 tags and a one-sentence summary for each session. It's slower (~5-10 seconds per session) and requires the `topic_model` section in your config. Topics improve search quality and enable topic-based auto-linking, but Anamnesis works without them.
+This uses a local LLM (gemma3:12b by default) to extract 3-8 topic tags and a one-sentence summary per session. With the default `full` strategy, the extractor reads the entire session content, compresses it by stripping common English words (~25% reduction), splits into chunks, and merges tags across passes. Larger sessions take longer (a 100+ turn session might take 30-40 seconds), but produce more accurate tags. Set `topic_model.strategy` to `first_message` for faster but less thorough extraction. Topics improve search quality and enable topic-based auto-linking, but Anamnesis works without them.
 
 **Verify:**
 ```bash

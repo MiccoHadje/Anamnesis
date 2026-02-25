@@ -377,6 +377,16 @@ export class PgStorage implements StorageBackend {
     return rows[0]?.user_content || null;
   }
 
+  async getSessionTurnTexts(sessionId: string): Promise<string[]> {
+    const { rows } = await this.pool.query(
+      `SELECT embedding_text FROM anamnesis_turns
+       WHERE session_id = $1 AND embedding_text IS NOT NULL AND embedding_text != ''
+       ORDER BY turn_index`,
+      [sessionId]
+    );
+    return rows.map((r: { embedding_text: string }) => r.embedding_text);
+  }
+
   // --- Linking ---
 
   async getSessionFiles(sessionId: string): Promise<string[]> {

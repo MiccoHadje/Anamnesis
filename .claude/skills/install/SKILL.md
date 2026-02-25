@@ -142,7 +142,20 @@ If the config already exists, verify it connects:
 node dist/index.js stats 2>/dev/null || echo "Config issue — check database settings"
 ```
 
-**Keep it minimal for first-time setup.** Only configure required fields. Advanced options (topics, reporting, tasks) can be added later.
+6. **Ask about preserve_words for topic extraction.** The topic extractor compresses session text by stripping common English words (pronouns, prepositions, verbs, etc.) before sending it to the LLM. If the user has project names or key terms that collide with common English words, they should be added to `topic_model.preserve_words` so they survive compression.
+
+   Ask the user:
+   > Topic extraction strips common English words to compress text before analysis. If any of your project names or key terms are common English words (e.g., "Dash", "Key", "Home", "State", "General"), they should be preserved. What are your project names?
+
+   Then scan the project names for collisions with common words and add any matches to `preserve_words`:
+   ```json
+   "topic_model": {
+     "preserve_words": ["dash", "home", "state"]
+   }
+   ```
+   If no project names collide, skip this step. Short names (1-2 characters like "HG" or "AI") should always be added since the compressor strips short words by default.
+
+**Keep it minimal for first-time setup.** Only configure required fields. Advanced options (reporting, tasks) can be added later.
 
 ### Step 4: Build
 

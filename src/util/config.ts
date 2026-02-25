@@ -27,6 +27,8 @@ export interface AnamnesisConfig {
   topic_model: {
     url: string;
     model: string;
+    strategy: 'full' | 'first_message';
+    preserve_words?: string[];
   };
   concurrency: {
     embedding: number;
@@ -67,6 +69,7 @@ const DEFAULT_CONFIG: AnamnesisConfig = {
   topic_model: {
     url: 'http://localhost:11434',
     model: 'gemma3:12b',
+    strategy: 'full' as const,
   },
   concurrency: {
     embedding: 4,

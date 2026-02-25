@@ -17,7 +17,9 @@
   },
   "topic_model": {
     "url": "http://localhost:11434",
-    "model": "gemma3:12b"
+    "model": "gemma3:12b",
+    "strategy": "full",
+    "preserve_words": ["dash", "key", "state"]
   },
   "concurrency": {
     "embedding": 4,

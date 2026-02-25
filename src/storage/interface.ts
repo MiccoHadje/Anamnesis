@@ -51,6 +51,7 @@ export interface StorageBackend {
   // Topics
   updateSessionTopics(sessionId: string, tags: string[], summary: string): Promise<void>;
   getFirstUserMessage(sessionId: string): Promise<string | null>;
+  getSessionTurnTexts(sessionId: string): Promise<string[]>;
 
   // Linking
   getSessionFiles(sessionId: string): Promise<string[]>;

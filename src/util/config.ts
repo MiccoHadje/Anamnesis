@@ -2,6 +2,7 @@ import { readFileSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { homedir } from 'os';
+import { ConfigError } from '../types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, '..', '..');
@@ -11,6 +12,7 @@ export interface AnamnesisConfig {
   exclude_sessions: string[];
   transcripts_root: string;
   search_mode: 'hybrid' | 'vector';
+  max_embedding_chars: number;
   database: {
     host: string;
     port: number;
@@ -30,6 +32,11 @@ export interface AnamnesisConfig {
     embedding: number;
     topics: number;
   };
+  tasks?: {
+    provider: 'nudge' | 'filesystem';
+    nudge?: { host: string; port: number; database: string; user: string; password?: string };
+    filesystem?: { path: string; name?: string };
+  };
   reporting?: {
     projects: Array<{
       name: string;
@@ -46,6 +53,7 @@ const DEFAULT_CONFIG: AnamnesisConfig = {
   exclude_sessions: [],
   transcripts_root: '',
   search_mode: 'hybrid',
+  max_embedding_chars: 8000,
   database: {
     host: 'localhost',
     port: 5432,
@@ -102,13 +110,53 @@ function applyEnvOverrides(config: AnamnesisConfig): void {
   }
 }
 
+/** Validate config values. Throws ConfigError on invalid config. */
+function validateConfig(config: AnamnesisConfig): void {
+  const { database, ollama, topic_model, concurrency, max_embedding_chars } = config;
+
+  if (database.port < 1 || database.port > 65535) {
+    throw new ConfigError(`Invalid database.port: ${database.port} (must be 1-65535)`);
+  }
+
+  for (const [name, section] of [['ollama', ollama], ['topic_model', topic_model]] as const) {
+    const url = section.url;
+    if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
+      throw new ConfigError(`Invalid ${name}.url: "${url}" (must start with http:// or https://)`);
+    }
+  }
+
+  if (concurrency.embedding < 1) {
+    throw new ConfigError(`Invalid concurrency.embedding: ${concurrency.embedding} (must be >= 1)`);
+  }
+  if (concurrency.topics < 1) {
+    throw new ConfigError(`Invalid concurrency.topics: ${concurrency.topics} (must be >= 1)`);
+  }
+
+  if (max_embedding_chars < 100) {
+    throw new ConfigError(`Invalid max_embedding_chars: ${max_embedding_chars} (must be >= 100)`);
+  }
+
+  if (config.search_mode !== 'hybrid' && config.search_mode !== 'vector') {
+    throw new ConfigError(`Invalid search_mode: "${config.search_mode}" (must be "hybrid" or "vector")`);
+  }
+}
+
 export function getConfig(): AnamnesisConfig {
   if (_config) return _config;
 
   const configPath = resolve(PROJECT_ROOT, 'anamnesis.config.json');
   if (existsSync(configPath)) {
     const raw = JSON.parse(readFileSync(configPath, 'utf-8'));
-    _config = { ...DEFAULT_CONFIG, ...raw, database: { ...DEFAULT_CONFIG.database, ...raw.database }, ollama: { ...DEFAULT_CONFIG.ollama, ...raw.ollama }, topic_model: { ...DEFAULT_CONFIG.topic_model, ...raw.topic_model }, concurrency: { ...DEFAULT_CONFIG.concurrency, ...raw.concurrency }, ...(raw.reporting ? { reporting: raw.reporting } : {}) };
+    _config = {
+      ...DEFAULT_CONFIG,
+      ...raw,
+      database: { ...DEFAULT_CONFIG.database, ...raw.database },
+      ollama: { ...DEFAULT_CONFIG.ollama, ...raw.ollama },
+      topic_model: { ...DEFAULT_CONFIG.topic_model, ...raw.topic_model },
+      concurrency: { ...DEFAULT_CONFIG.concurrency, ...raw.concurrency },
+      ...(raw.reporting ? { reporting: raw.reporting } : {}),
+      ...(raw.tasks ? { tasks: raw.tasks } : {}),
+    };
   } else {
     _config = DEFAULT_CONFIG;
   }
@@ -128,6 +176,9 @@ export function getConfig(): AnamnesisConfig {
       'or set the ANAMNESIS_TRANSCRIPTS_ROOT environment variable.'
     );
   }
+
+  // Validate after all overrides applied
+  validateConfig(_config!);
 
   return _config!;
 }

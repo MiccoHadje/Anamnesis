@@ -1,7 +1,7 @@
 import type { Turn } from '../etl/chunker.js';
+import { getConfig } from './config.js';
 
 const MAX_TOOL_OUTPUT_CHARS = 500;
-const MAX_EMBEDDING_CHARS = 8000; // bge-m3 has 8192 token context; ~1 char/token for code-heavy text
 
 /**
  * Build the text that will be embedded for a turn.
@@ -13,6 +13,7 @@ const MAX_EMBEDDING_CHARS = 8000; // bge-m3 has 8192 token context; ~1 char/toke
  *   Assistant: <assistant content>
  */
 export function buildEmbeddingText(turn: Turn, projectName?: string): string {
+  const maxChars = getConfig().max_embedding_chars;
   const parts: string[] = [];
 
   if (projectName) {
@@ -36,8 +37,8 @@ export function buildEmbeddingText(turn: Turn, projectName?: string): string {
   }
 
   const text = parts.join('\n');
-  return text.length > MAX_EMBEDDING_CHARS
-    ? text.slice(0, MAX_EMBEDDING_CHARS)
+  return text.length > maxChars
+    ? text.slice(0, maxChars)
     : text;
 }
 

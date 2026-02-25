@@ -3,6 +3,7 @@
   "exclude_projects": [],
   "exclude_sessions": [],
   "search_mode": "hybrid",
+  "max_embedding_chars": 8000,
   "database": {
     "host": "localhost",
     "port": 5432,
@@ -21,6 +22,15 @@
   "concurrency": {
     "embedding": 4,
     "topics": 2
+  },
+  "tasks": {
+    "provider": "nudge",
+    "nudge": {
+      "host": "localhost",
+      "port": 5432,
+      "database": "nudge",
+      "user": "anamnesis"
+    }
   },
   "reporting": {
     "projects": [

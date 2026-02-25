@@ -30,6 +30,15 @@ export interface AnamnesisConfig {
     embedding: number;
     topics: number;
   };
+  reporting?: {
+    projects: Array<{
+      name: string;
+      anamnesis_project: string;
+      daily_log_dir?: string;
+      nudge_project?: string;
+    }>;
+    reports_dir: string;
+  };
 }
 
 const DEFAULT_CONFIG: AnamnesisConfig = {
@@ -99,7 +108,7 @@ export function getConfig(): AnamnesisConfig {
   const configPath = resolve(PROJECT_ROOT, 'anamnesis.config.json');
   if (existsSync(configPath)) {
     const raw = JSON.parse(readFileSync(configPath, 'utf-8'));
-    _config = { ...DEFAULT_CONFIG, ...raw, database: { ...DEFAULT_CONFIG.database, ...raw.database }, ollama: { ...DEFAULT_CONFIG.ollama, ...raw.ollama }, topic_model: { ...DEFAULT_CONFIG.topic_model, ...raw.topic_model }, concurrency: { ...DEFAULT_CONFIG.concurrency, ...raw.concurrency } };
+    _config = { ...DEFAULT_CONFIG, ...raw, database: { ...DEFAULT_CONFIG.database, ...raw.database }, ollama: { ...DEFAULT_CONFIG.ollama, ...raw.ollama }, topic_model: { ...DEFAULT_CONFIG.topic_model, ...raw.topic_model }, concurrency: { ...DEFAULT_CONFIG.concurrency, ...raw.concurrency }, ...(raw.reporting ? { reporting: raw.reporting } : {}) };
   } else {
     _config = DEFAULT_CONFIG;
   }

@@ -7,7 +7,7 @@ import {
 import { tools, handleTool } from './tools.js';
 
 const server = new Server(
-  { name: 'anamnesis', version: '0.1.0' },
+  { name: 'anamnesis', version: '1.0.0' },
   { capabilities: { tools: {} } }
 );
 

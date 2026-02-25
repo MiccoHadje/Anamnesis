@@ -10,6 +10,7 @@ import {
   getStats,
 } from '../db/queries.js';
 import { getConfig } from '../util/config.js';
+import { generateProjectReport, generateCrossProjectReport } from './daily-report.js';
 
 export const tools = [
   {
@@ -67,6 +68,18 @@ export const tools = [
       },
     },
   },
+  {
+    name: 'anamnesis_daily_report',
+    description:
+      'Generate a daily activity report from Anamnesis session data. Returns a markdown report summarizing sessions, topics, and time allocation for a given date. If project is specified, returns a per-project report; otherwise returns a cross-project summary. Requires the "reporting" section in config.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        date: { type: 'string', description: 'Date to report on (YYYY-MM-DD). Defaults to yesterday.' },
+        project: { type: 'string', description: 'Specific project name for a per-project report. Omit for cross-project summary.' },
+      },
+    },
+  },
 ];
 
 export async function handleTool(
@@ -82,6 +95,8 @@ export async function handleTool(
       return handleSession(args);
     case 'anamnesis_ingest':
       return handleIngest(args);
+    case 'anamnesis_daily_report':
+      return handleDailyReport(args);
     default:
       return `Unknown tool: ${name}`;
   }
@@ -271,6 +286,41 @@ async function handleIngest(args: Record<string, unknown>): Promise<string> {
   const skipped = results.filter(r => r.skipped).length;
 
   return `Ingested ${ok} sessions, ${errs} errors, ${skipped} skipped out of ${files.length} files.`;
+}
+
+async function handleDailyReport(args: Record<string, unknown>): Promise<string> {
+  const config = getConfig();
+  if (!config.reporting?.projects?.length) {
+    return 'Error: No reporting.projects configured in anamnesis.config.json. Add a "reporting" section with your projects to use daily reports.';
+  }
+
+  // Default to yesterday
+  const dateArg = args.date as string | undefined;
+  const date = dateArg || (() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().split('T')[0];
+  })();
+
+  const projectName = args.project as string | undefined;
+
+  if (projectName) {
+    // Find matching project in config
+    const proj = config.reporting.projects.find(
+      p => p.name.toLowerCase() === projectName.toLowerCase() ||
+           p.anamnesis_project.toLowerCase() === projectName.toLowerCase()
+    );
+    if (!proj) {
+      const available = config.reporting.projects.map(p => p.name).join(', ');
+      return `Error: Project "${projectName}" not found in reporting config. Available: ${available}`;
+    }
+    const report = await generateProjectReport(date, proj.name, proj.anamnesis_project);
+    return report || `No activity found for ${proj.name} on ${date}.`;
+  }
+
+  // Cross-project report
+  const report = await generateCrossProjectReport(date, config.reporting.projects);
+  return report;
 }
 
 function truncate(s: string, max: number): string {

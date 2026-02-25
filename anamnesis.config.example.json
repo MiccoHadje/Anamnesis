@@ -21,5 +21,16 @@
   "concurrency": {
     "embedding": 4,
     "topics": 2
+  },
+  "reporting": {
+    "projects": [
+      {
+        "name": "MyProject",
+        "anamnesis_project": "MyProject",
+        "daily_log_dir": "docs/daily",
+        "nudge_project": "@MyProject"
+      }
+    ],
+    "reports_dir": "~/.claude/reports"
   }
 }

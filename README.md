@@ -12,6 +12,7 @@
 - **Auto-linking** — Sessions are linked by shared files, semantic similarity, and topic overlap
 - **Topic extraction** — Auto-generated tags and summaries per session via local LLM
 - **Proactive recall** — Session-start hook injects relevant context automatically
+- **Compaction resilience** — PreCompact hook captures session state and triggers ingestion before context window compaction, so long sessions never lose their thread
 - **Daily reporting** — MCP tool + skill for cross-project daily/weekly/monthly reports
 
 ## How It Works

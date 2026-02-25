@@ -1,5 +1,6 @@
 import { getStorage } from '../storage/index.js';
 import type { SessionSummary } from '../types.js';
+import { formatDuration } from './format.js';
 
 export interface DailyReportProject {
   name: string;
@@ -8,14 +9,6 @@ export interface DailyReportProject {
 
 export interface DailyReportConfig {
   projects: DailyReportProject[];
-}
-
-function formatDuration(ms: number): string {
-  const mins = Math.floor(ms / 60000);
-  if (mins < 60) return `${mins}m`;
-  const hours = Math.floor(mins / 60);
-  const remMins = mins % 60;
-  return remMins > 0 ? `${hours}h ${remMins}m` : `${hours}h`;
 }
 
 function activityLevel(sessions: SessionSummary[]): string {

@@ -15,6 +15,7 @@ export interface AnamnesisConfig {
     port: number;
     database: string;
     user: string;
+    password?: string;
   };
   ollama: {
     url: string;
@@ -33,13 +34,13 @@ export interface AnamnesisConfig {
 const DEFAULT_CONFIG: AnamnesisConfig = {
   exclude_projects: [],
   exclude_sessions: [],
-  transcripts_root: 'C:/Users/clay/.claude/projects',
+  transcripts_root: '',
   search_mode: 'hybrid',
   database: {
     host: 'localhost',
     port: 5432,
     database: 'anamnesis',
-    user: 'clay',
+    user: 'anamnesis',
   },
   ollama: {
     url: 'http://localhost:11434',
@@ -67,6 +68,14 @@ export function getConfig(): AnamnesisConfig {
   } else {
     _config = DEFAULT_CONFIG;
   }
+
+  if (!_config!.transcripts_root) {
+    throw new Error(
+      'transcripts_root is not configured. Create anamnesis.config.json from anamnesis.config.example.json ' +
+      'and set transcripts_root to your Claude Code transcripts directory (e.g., ~/.claude/projects).'
+    );
+  }
+
   return _config!;
 }
 

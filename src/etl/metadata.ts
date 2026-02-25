@@ -55,8 +55,8 @@ export function extractSessionMetadata(
   }
 
   // Derive project name from the file path's project directory
-  // e.g., C:/Users/clay/.claude/projects/d--Projects-RPGDash/abc123.jsonl → d--Projects-RPGDash
-  // For subagents: .../d--Projects-HG/<uuid>/subagents/agent-xyz.jsonl → d--Projects-HG
+  // e.g., ~/.claude/projects/my-project/abc123.jsonl → my-project
+  // For subagents: .../my-project/<uuid>/subagents/agent-xyz.jsonl → my-project
   const projectDir = deriveProjectDir(filePath);
   const projectName = projectDir && projectDir !== 'projects' ? friendlyProjectName(projectDir) : undefined;
 

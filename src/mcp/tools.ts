@@ -9,6 +9,7 @@ import {
   getSession,
   getStats,
 } from '../db/queries.js';
+import { getConfig } from '../util/config.js';
 
 export const tools = [
   {
@@ -94,10 +95,11 @@ async function handleSearch(args: Record<string, unknown>): Promise<string> {
   const limit = (args.limit as number) || 5;
   const since = args.since as string | undefined;
   const hybrid = args.hybrid as boolean | undefined;
+  const useHybrid = hybrid ?? (getConfig().search_mode === 'hybrid');
 
   const queryEmb = await embed(query);
 
-  const results = hybrid
+  const results = useHybrid
     ? await searchHybrid(queryEmb, query, { project, limit, since })
     : await searchByEmbedding(queryEmb, { project, limit, since });
 
@@ -109,7 +111,7 @@ async function handleSearch(args: Record<string, unknown>): Promise<string> {
   for (const r of results) {
     const date = r.started_at ? new Date(r.started_at).toLocaleDateString() : '?';
     const turnDate = r.timestamp_start ? new Date(r.timestamp_start).toLocaleString() : null;
-    const sim = hybrid ? formatRelevance(r.similarity) : `${(r.similarity * 100).toFixed(1)}%`;
+    const sim = useHybrid ? formatRelevance(r.similarity) : `${(r.similarity * 100).toFixed(1)}%`;
     lines.push(`## [${r.session_id.slice(0, 8)}] [${r.project_name || '?'}] turn ${r.turn_index} — ${sim} match — ${date}`);
     if (turnDate) lines.push(`Turn time: ${turnDate}`);
     if (r.user_content) {

@@ -9,7 +9,6 @@ import { ingestFile, ingestFiles } from './etl/ingester.js';
 import { discoverFiles, findFileBySessionId } from './etl/discovery.js';
 import { embed } from './etl/embedder.js';
 import { backfillTopics } from './etl/topics.js';
-import { linkSession } from './etl/linker.js';
 import { getSessionsWithoutTopics } from './db/queries.js';
 
 const command = process.argv[2];

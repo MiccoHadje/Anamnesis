@@ -98,42 +98,6 @@ export async function deleteSessionData(sessionId: string, client?: pg.PoolClien
 
 // --- Turns ---
 
-export async function insertTurn(
-  turn: {
-    session_id: string;
-    turn_index: number;
-    user_content?: string;
-    assistant_content?: string;
-    tool_calls: unknown[];
-    files_in_turn: string[];
-    timestamp_start?: Date;
-    timestamp_end?: Date;
-    token_count?: number;
-    embedding_text?: string;
-  },
-  client?: pg.PoolClient
-) {
-  const q = client || getPool();
-  await q.query(
-    `INSERT INTO anamnesis_turns
-       (session_id, turn_index, user_content, assistant_content, tool_calls,
-        files_in_turn, timestamp_start, timestamp_end, token_count, embedding_text)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-    [
-      turn.session_id,
-      turn.turn_index,
-      turn.user_content || null,
-      turn.assistant_content || null,
-      JSON.stringify(turn.tool_calls),
-      turn.files_in_turn,
-      turn.timestamp_start || null,
-      turn.timestamp_end || null,
-      turn.token_count || null,
-      turn.embedding_text || null,
-    ]
-  );
-}
-
 export async function insertTurnWithEmbedding(
   turn: {
     session_id: string;

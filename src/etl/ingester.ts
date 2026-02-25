@@ -6,22 +6,10 @@ import { buildEmbeddingText } from '../util/text.js';
 import { linkSession } from './linker.js';
 import { extractTopics } from './topics.js';
 import { embed, embedBatch, averageEmbeddings, ensureOllama } from './embedder.js';
-import {
-  insertSession,
-  insertTurnWithEmbedding,
-  deleteSessionData,
-  upsertIngestedFile,
-  updateSessionTopics,
-} from '../db/queries.js';
-import { withTransaction } from '../db/client.js';
+import { getStorage } from '../storage/index.js';
+import type { IngestResult } from '../types.js';
 
-export interface IngestResult {
-  sessionId: string;
-  turnCount: number;
-  projectName?: string;
-  skipped: boolean;
-  error?: string;
-}
+export type { IngestResult };
 
 /**
  * Ingest a single JSONL transcript file:
@@ -32,6 +20,7 @@ export async function ingestFile(
   opts?: { force?: boolean; onProgress?: (msg: string) => void }
 ): Promise<IngestResult> {
   const log = opts?.onProgress || console.log;
+  const storage = getStorage();
 
   // Fail fast if Ollama isn't available
   await ensureOllama();
@@ -49,7 +38,7 @@ export async function ingestFile(
   if (turns.length === 0) {
     // Record the file so we don't rediscover it
     const stat = statSync(filePath);
-    await upsertIngestedFile(filePath, stat.size, stat.mtime, 'skipped');
+    await storage.upsertIngestedFile(filePath, stat.size, stat.mtime, 'skipped');
     return { sessionId: '', turnCount: 0, skipped: true };
   }
 
@@ -69,16 +58,15 @@ export async function ingestFile(
 
   // Compute session embedding (average of turn embeddings)
   const sessionEmbedding = averageEmbeddings(embeddings);
-  const sessionEmbStr = `[${sessionEmbedding.join(',')}]`;
 
   // Store everything in a transaction
-  await withTransaction(async (client) => {
+  await storage.transaction(async (tx) => {
     // Delete existing data if re-ingesting
     if (opts?.force) {
-      await deleteSessionData(meta.sessionId, client);
+      await tx.deleteSessionData(meta.sessionId);
     }
 
-    await insertSession({
+    await tx.insertSession({
       session_id: meta.sessionId,
       project_name: meta.projectName,
       cwd: meta.cwd,
@@ -91,17 +79,14 @@ export async function ingestFile(
       tools_used: meta.toolsUsed,
       is_subagent: meta.isSubagent,
       parent_session_id: meta.parentSessionId,
-    }, client);
+    });
 
     // Set session embedding
-    await client.query(
-      'UPDATE anamnesis_sessions SET session_embedding = $1::vector WHERE session_id = $2',
-      [sessionEmbStr, meta.sessionId]
-    );
+    await tx.updateSessionEmbedding(meta.sessionId, sessionEmbedding);
 
     for (let i = 0; i < turns.length; i++) {
       const turn = turns[i];
-      await insertTurnWithEmbedding({
+      await tx.insertTurnWithEmbedding({
         session_id: meta.sessionId,
         turn_index: turn.turnIndex,
         user_content: turn.userContent,
@@ -113,12 +98,12 @@ export async function ingestFile(
         token_count: turn.tokenCount,
         embedding_text: embTexts[i],
         embedding: embeddings[i],
-      }, client);
+      });
     }
 
     // Record ingested file (inside transaction so it rolls back on error)
     const stat = statSync(filePath);
-    await upsertIngestedFile(filePath, stat.size, stat.mtime, meta.sessionId, client);
+    await tx.upsertIngestedFile(filePath, stat.size, stat.mtime, meta.sessionId);
   });
 
   log(`  Stored ${turns.length} turns with embeddings.`);
@@ -133,7 +118,7 @@ export async function ingestFile(
   try {
     const topics = await extractTopics(meta.sessionId, meta.projectName || null, meta.filesTouched, meta.toolsUsed);
     if (topics) {
-      await updateSessionTopics(meta.sessionId, topics.tags, topics.summary);
+      await storage.updateSessionTopics(meta.sessionId, topics.tags, topics.summary);
       log(`  Topics: [${topics.tags.join(', ')}]`);
     }
   } catch (err) {

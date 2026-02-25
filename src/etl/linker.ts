@@ -1,4 +1,4 @@
-import { getPool } from '../db/client.js';
+import { getStorage } from '../storage/index.js';
 
 /**
  * Run auto-linking for a newly ingested session.
@@ -19,35 +19,23 @@ export async function linkSession(sessionId: string): Promise<{ fileLinks: numbe
  * Score = number of shared files / total unique files across both sessions.
  */
 async function linkByFileOverlap(sessionId: string): Promise<number> {
-  const pool = getPool();
+  const storage = getStorage();
 
-  // Get this session's files
-  const { rows: [session] } = await pool.query(
-    'SELECT files_touched FROM anamnesis_sessions WHERE session_id = $1',
-    [sessionId]
-  );
-  if (!session || !session.files_touched?.length) return 0;
+  const files = await storage.getSessionFiles(sessionId);
+  if (files.length === 0) return 0;
 
-  // Find sessions with overlapping files (using array overlap operator)
-  const { rows: overlapping } = await pool.query(
-    `SELECT session_id, files_touched
-     FROM anamnesis_sessions
-     WHERE session_id != $1
-       AND files_touched && $2::text[]`,
-    [sessionId, session.files_touched]
-  );
+  const overlapping = await storage.getSessionsWithOverlappingFiles(sessionId, files);
 
   let count = 0;
   for (const other of overlapping) {
-    const setA = new Set(session.files_touched as string[]);
-    const setB = new Set(other.files_touched as string[]);
+    const setA = new Set(files);
+    const setB = new Set(other.files_touched);
     const shared = [...setA].filter(f => setB.has(f));
     const union = new Set([...setA, ...setB]);
     const score = shared.length / union.size;
 
     if (score < 0.05) continue; // Skip trivial overlap
 
-    // Pick one shared file as detail
     const detail = shared[0];
 
     // Ensure consistent ordering (smaller ID first)
@@ -55,12 +43,7 @@ async function linkByFileOverlap(sessionId: string): Promise<number> {
       ? [sessionId, other.session_id]
       : [other.session_id, sessionId];
 
-    await pool.query(
-      `INSERT INTO anamnesis_session_links (session_a, session_b, link_type, score, shared_detail)
-       VALUES ($1, $2, 'file_overlap', $3, $4)
-       ON CONFLICT (session_a, session_b, link_type) DO UPDATE SET score = $3, shared_detail = $4`,
-      [a, b, score, `${shared.length} shared files (e.g., ${detail})`]
-    );
+    await storage.upsertSessionLink(a, b, 'file_overlap', score, `${shared.length} shared files (e.g., ${detail})`);
     count++;
   }
 
@@ -73,25 +56,9 @@ async function linkByFileOverlap(sessionId: string): Promise<number> {
  * Link the top N most similar sessions above a threshold.
  */
 async function linkBySemantic(sessionId: string, topN = 5, threshold = 0.5): Promise<number> {
-  const pool = getPool();
+  const storage = getStorage();
 
-  // Get this session's embedding
-  const { rows: [session] } = await pool.query(
-    'SELECT session_embedding FROM anamnesis_sessions WHERE session_id = $1',
-    [sessionId]
-  );
-  if (!session?.session_embedding) return 0;
-
-  // Find most similar sessions
-  const { rows: similar } = await pool.query(
-    `SELECT session_id, 1 - (session_embedding <=> $1::vector) AS similarity
-     FROM anamnesis_sessions
-     WHERE session_id != $2
-       AND session_embedding IS NOT NULL
-     ORDER BY session_embedding <=> $1::vector
-     LIMIT $3`,
-    [session.session_embedding, sessionId, topN]
-  );
+  const similar = await storage.findSimilarSessions(sessionId, topN);
 
   let count = 0;
   for (const other of similar) {
@@ -101,12 +68,7 @@ async function linkBySemantic(sessionId: string, topN = 5, threshold = 0.5): Pro
       ? [sessionId, other.session_id]
       : [other.session_id, sessionId];
 
-    await pool.query(
-      `INSERT INTO anamnesis_session_links (session_a, session_b, link_type, score, shared_detail)
-       VALUES ($1, $2, 'semantic', $3, $4)
-       ON CONFLICT (session_a, session_b, link_type) DO UPDATE SET score = $3`,
-      [a, b, other.similarity, `${(other.similarity * 100).toFixed(0)}% similar`]
-    );
+    await storage.upsertSessionLink(a, b, 'semantic', other.similarity, `${(other.similarity * 100).toFixed(0)}% similar`);
     count++;
   }
 
@@ -118,30 +80,17 @@ async function linkBySemantic(sessionId: string, topN = 5, threshold = 0.5): Pro
  * Link sessions that share 2+ tags. Score = Jaccard similarity (shared / union).
  */
 async function linkByTopic(sessionId: string): Promise<number> {
-  const pool = getPool();
+  const storage = getStorage();
 
-  const { rows: [session] } = await pool.query(
-    'SELECT tags FROM anamnesis_sessions WHERE session_id = $1',
-    [sessionId]
-  );
-  if (!session?.tags?.length) return 0;
+  const tags = await storage.getSessionTags(sessionId);
+  if (tags.length === 0) return 0;
 
-  const myTags = new Set(session.tags as string[]);
-  if (myTags.size === 0) return 0;
-
-  // Find sessions with overlapping tags (array overlap operator)
-  const { rows: overlapping } = await pool.query(
-    `SELECT session_id, tags
-     FROM anamnesis_sessions
-     WHERE session_id != $1
-       AND tags && $2::text[]
-       AND array_length(tags, 1) > 0`,
-    [sessionId, session.tags]
-  );
+  const myTags = new Set(tags);
+  const overlapping = await storage.getSessionsWithOverlappingTags(sessionId, tags);
 
   let count = 0;
   for (const other of overlapping) {
-    const otherTags = new Set(other.tags as string[]);
+    const otherTags = new Set(other.tags);
     const shared = [...myTags].filter(t => otherTags.has(t));
     if (shared.length < 2) continue; // Require at least 2 shared tags
 
@@ -152,12 +101,7 @@ async function linkByTopic(sessionId: string): Promise<number> {
       ? [sessionId, other.session_id]
       : [other.session_id, sessionId];
 
-    await pool.query(
-      `INSERT INTO anamnesis_session_links (session_a, session_b, link_type, score, shared_detail)
-       VALUES ($1, $2, 'topic', $3, $4)
-       ON CONFLICT (session_a, session_b, link_type) DO UPDATE SET score = $3, shared_detail = $4`,
-      [a, b, score, `shared tags: ${shared.join(', ')}`]
-    );
+    await storage.upsertSessionLink(a, b, 'topic', score, `shared tags: ${shared.join(', ')}`);
     count++;
   }
 

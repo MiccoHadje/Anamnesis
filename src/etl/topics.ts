@@ -1,9 +1,5 @@
 import { getConfig } from '../util/config.js';
-import {
-  getSessionsWithoutTopics,
-  getFirstUserMessage,
-  updateSessionTopics,
-} from '../db/queries.js';
+import { getStorage } from '../storage/index.js';
 
 interface TopicResult {
   tags: string[];
@@ -20,7 +16,8 @@ export async function extractTopics(
   toolsUsed: string[]
 ): Promise<TopicResult | null> {
   const config = getConfig();
-  const firstMessage = await getFirstUserMessage(sessionId);
+  const storage = getStorage();
+  const firstMessage = await storage.getFirstUserMessage(sessionId);
   if (!firstMessage) return null;
 
   // Build context for the LLM
@@ -110,6 +107,7 @@ export async function backfillTopics(
   const batchSize = opts?.batchSize || 10;
   const concurrency = opts?.concurrency || getConfig().concurrency.topics;
   const log = opts?.onProgress;
+  const storage = getStorage();
 
   let processed = 0;
   let failed = 0;
@@ -118,7 +116,7 @@ export async function backfillTopics(
 
   // Process in batches
   while (true) {
-    const sessions = await getSessionsWithoutTopics(batchSize);
+    const sessions = await storage.getSessionsWithoutTopics(batchSize);
     if (sessions.length === 0) break;
 
     // Process with concurrency
@@ -129,11 +127,11 @@ export async function backfillTopics(
           const result = await extractTopics(s.session_id, s.project_name, s.files_touched, s.tools_used);
           if (!result) {
             // Mark as processed with empty summary so it won't be re-fetched
-            await updateSessionTopics(s.session_id, ['_no_content'], '');
+            await storage.updateSessionTopics(s.session_id, ['_no_content'], '');
             skipped++;
             return;
           }
-          await updateSessionTopics(s.session_id, result.tags, result.summary);
+          await storage.updateSessionTopics(s.session_id, result.tags, result.summary);
           processed++;
           totalProcessed++;
           log?.(totalProcessed, -1, s.session_id, s.project_name || '?', result.tags.length);

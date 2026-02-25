@@ -2,13 +2,7 @@ import { embed } from '../etl/embedder.js';
 import { ingestFile } from '../etl/ingester.js';
 import { discoverFiles, findFileBySessionId } from '../etl/discovery.js';
 import { ingestFiles } from '../etl/ingester.js';
-import {
-  searchByEmbedding,
-  searchHybrid,
-  getRecentSessions,
-  getSession,
-  getStats,
-} from '../db/queries.js';
+import { getStorage } from '../storage/index.js';
 import { getConfig } from '../util/config.js';
 import { generateProjectReport, generateCrossProjectReport } from './daily-report.js';
 
@@ -112,11 +106,12 @@ async function handleSearch(args: Record<string, unknown>): Promise<string> {
   const hybrid = args.hybrid as boolean | undefined;
   const useHybrid = hybrid ?? (getConfig().search_mode === 'hybrid');
 
+  const storage = getStorage();
   const queryEmb = await embed(query);
 
   const results = useHybrid
-    ? await searchHybrid(queryEmb, query, { project, limit, since })
-    : await searchByEmbedding(queryEmb, { project, limit, since });
+    ? await storage.searchHybrid(queryEmb, query, { project, limit, since })
+    : await storage.searchByEmbedding(queryEmb, { project, limit, since });
 
   if (results.length === 0) {
     return 'No results found.';
@@ -142,7 +137,6 @@ async function handleSearch(args: Record<string, unknown>): Promise<string> {
 }
 
 function formatRelevance(rrfScore: number): string {
-  // RRF scores are typically 0.01-0.03 range. Map to human-readable labels.
   if (rrfScore >= 0.03) return 'high';
   if (rrfScore >= 0.02) return 'medium';
   return 'low';
@@ -154,7 +148,8 @@ async function handleRecent(args: Record<string, unknown>): Promise<string> {
   const file = args.file as string | undefined;
   const limit = (args.limit as number) || 10;
 
-  const sessions = await getRecentSessions({ project, days, file, limit });
+  const storage = getStorage();
+  const sessions = await storage.getRecentSessions({ project, days, file, limit });
 
   if (sessions.length === 0) {
     return `No sessions found in the last ${days} days.`;
@@ -162,7 +157,7 @@ async function handleRecent(args: Record<string, unknown>): Promise<string> {
 
   const lines: string[] = [`${sessions.length} recent sessions:\n`];
   for (const s of sessions) {
-    const date = new Date(s.started_at).toLocaleString();
+    const date = new Date(s.started_at!).toLocaleString();
     const tools = (s.tools_used || []).join(', ');
     const subagentLabel = s.is_subagent ? ' (subagent)' : '';
     const duration = s.started_at && s.ended_at ? formatDuration(new Date(s.ended_at).getTime() - new Date(s.started_at).getTime()) : null;
@@ -183,7 +178,8 @@ async function handleSession(args: Record<string, unknown>): Promise<string> {
   const sessionId = String(args.session_id || '');
   if (!sessionId) return 'Error: session_id is required';
 
-  const session = await getSession(sessionId);
+  const storage = getStorage();
+  const session = await storage.getSession(sessionId);
   if (!session) return `Session not found: ${sessionId}`;
 
   let turns = session.turns;
@@ -194,7 +190,7 @@ async function handleSession(args: Record<string, unknown>): Promise<string> {
     const [start, end] = range.split('-').map(Number);
     if (!isNaN(start)) {
       const endIdx = isNaN(end) ? start : end;
-      turns = turns.filter((t: { turn_index: number }) => t.turn_index >= start && t.turn_index <= endIdx);
+      turns = turns.filter(t => t.turn_index >= start && t.turn_index <= endIdx);
     }
   }
 
@@ -235,9 +231,7 @@ async function handleSession(args: Record<string, unknown>): Promise<string> {
   if (!args.turn_range && turns.length > MAX_AUTO_TURNS) {
     const firstN = 10;
     const lastN = 5;
-    const omitted = turns.length - firstN - lastN;
-    displayTurns = [...turns.slice(0, firstN), null as unknown, ...turns.slice(-lastN)];
-    // We'll handle the null sentinel below
+    displayTurns = [...turns.slice(0, firstN), null as unknown as typeof turns[0], ...turns.slice(-lastN)];
     lines.push(`*Showing first ${firstN} + last ${lastN} of ${turns.length} turns. Use turn_range for specific turns.*\n`);
   }
 

@@ -1,7 +1,7 @@
 import { readdirSync, statSync } from 'fs';
 import { join, basename } from 'path';
 import { getConfig } from '../util/config.js';
-import { getIngestedFilesMap } from '../db/queries.js';
+import { getStorage } from '../storage/index.js';
 
 export interface DiscoveredFile {
   path: string;
@@ -74,7 +74,7 @@ export async function discoverFiles(opts?: {
   if (!opts?.forceAll) {
     // Batch lookup — single query instead of N queries
     const allPaths = files.map(f => f.path);
-    const ingested = await getIngestedFilesMap(allPaths);
+    const ingested = await getStorage().getIngestedFilesMap(allPaths);
     const filtered: DiscoveredFile[] = [];
     for (const file of files) {
       const existing = ingested.get(file.path);

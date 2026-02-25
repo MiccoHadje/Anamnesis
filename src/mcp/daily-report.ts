@@ -1,4 +1,5 @@
-import { getPool } from '../db/client.js';
+import { getStorage } from '../storage/index.js';
+import type { SessionSummary } from '../types.js';
 
 export interface DailyReportProject {
   name: string;
@@ -7,50 +8,6 @@ export interface DailyReportProject {
 
 export interface DailyReportConfig {
   projects: DailyReportProject[];
-}
-
-interface SessionSummary {
-  session_id: string;
-  project_name: string;
-  started_at: Date;
-  ended_at: Date | null;
-  turn_count: number;
-  model: string | null;
-  summary: string | null;
-  tags: string[] | null;
-  files_touched: string[];
-  tools_used: string[];
-  is_subagent: boolean;
-}
-
-/**
- * Get all sessions for a date range, optionally filtered by project.
- */
-async function getSessionsForDate(
-  date: string,
-  project?: string
-): Promise<SessionSummary[]> {
-  const conditions = [
-    `started_at >= $1::date`,
-    `started_at < ($1::date + INTERVAL '1 day')`,
-    `NOT is_subagent`,
-  ];
-  const params: unknown[] = [date];
-
-  if (project) {
-    params.push(project);
-    conditions.push(`LOWER(project_name) = LOWER($${params.length})`);
-  }
-
-  const { rows } = await getPool().query(
-    `SELECT session_id, project_name, started_at, ended_at, turn_count,
-            model, summary, tags, files_touched, tools_used, is_subagent
-     FROM anamnesis_sessions
-     WHERE ${conditions.join(' AND ')}
-     ORDER BY started_at`,
-    params
-  );
-  return rows;
 }
 
 function formatDuration(ms: number): string {
@@ -82,7 +39,8 @@ export async function generateProjectReport(
   projectName: string,
   anamnesisProject: string
 ): Promise<string | null> {
-  const sessions = await getSessionsForDate(date, anamnesisProject);
+  const storage = getStorage();
+  const sessions = await storage.getSessionsForDate(date, anamnesisProject);
 
   if (sessions.length === 0) return null;
 
@@ -141,6 +99,7 @@ export async function generateCrossProjectReport(
   date: string,
   projects: DailyReportProject[]
 ): Promise<string> {
+  const storage = getStorage();
   const lines: string[] = [];
   lines.push(`# Cross-Project Daily Report — ${formatDate(date)}`);
   lines.push('');
@@ -152,7 +111,7 @@ export async function generateCrossProjectReport(
   }> = [];
 
   for (const p of projects) {
-    const sessions = await getSessionsForDate(date, p.anamnesis_project);
+    const sessions = await storage.getSessionsForDate(date, p.anamnesis_project);
     projectData.push({ name: p.name, sessions });
   }
 

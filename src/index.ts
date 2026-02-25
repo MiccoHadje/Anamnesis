@@ -1,15 +1,9 @@
-import { parseAllMessages } from './etl/parser.js';
-import { chunkIntoTurns } from './etl/chunker.js';
-import { extractSessionMetadata } from './etl/metadata.js';
-import { buildEmbeddingText } from './util/text.js';
 import { statSync } from 'fs';
-import { getStats, searchByEmbedding, upsertIngestedFile } from './db/queries.js';
-import { closePool } from './db/client.js';
+import { getStorage, closeStorage } from './storage/index.js';
 import { ingestFile, ingestFiles } from './etl/ingester.js';
 import { discoverFiles, findFileBySessionId } from './etl/discovery.js';
 import { embed } from './etl/embedder.js';
 import { backfillTopics } from './etl/topics.js';
-import { getSessionsWithoutTopics } from './db/queries.js';
 
 const command = process.argv[2];
 
@@ -49,7 +43,8 @@ async function main() {
       break;
     }
     case 'stats': {
-      const stats = await getStats();
+      const storage = getStorage();
+      const stats = await storage.getStats();
       console.log('Anamnesis stats:');
       console.log(`  Sessions: ${stats.sessions}`);
       console.log(`  Turns:    ${stats.turns}`);
@@ -71,7 +66,7 @@ async function main() {
       break;
   }
 
-  await closePool();
+  await closeStorage();
 }
 
 async function ingestSession(sessionId?: string) {
@@ -122,6 +117,7 @@ async function ingestAll(forceAll: boolean) {
 }
 
 async function backfill() {
+  const storage = getStorage();
   console.log('Full backfill — discovering ALL transcript files...');
   const files = await discoverFiles({ forceAll: false, minSize: 1024 });
   console.log(`Found ${files.length} files to process.`);
@@ -152,20 +148,21 @@ async function backfill() {
       // Record errored file so it doesn't get rediscovered every run
       try {
         const stat = statSync(file.path);
-        await upsertIngestedFile(file.path, stat.size, stat.mtime, 'error');
+        await storage.upsertIngestedFile(file.path, stat.size, stat.mtime, 'error');
       } catch { /* ignore */ }
     }
     processedSize += file.size;
   }
 
   console.log(`\nBackfill complete: ${successCount} ingested, ${errorCount} errors.`);
-  const stats = await getStats();
+  const stats = await storage.getStats();
   console.log(`DB totals: ${stats.sessions} sessions, ${stats.turns} turns, ${stats.links} links`);
 }
 
 async function backfillTopicsCli() {
+  const storage = getStorage();
   // Count sessions needing topics
-  const pending = await getSessionsWithoutTopics(1000);
+  const pending = await storage.getSessionsWithoutTopics(1000);
   console.log(`Found ${pending.length} sessions without topics.`);
   if (pending.length === 0) return;
 
@@ -184,16 +181,15 @@ async function backfillTopicsCli() {
   // Re-link sessions with new topic links
   if (result.processed > 0) {
     console.log('Running topic linking for updated sessions...');
-    // Topic linking happens via linkSession which is called per-session
-    // For backfill, we just note that new ingestions will pick up topic links
     console.log('Topic links will be created on next ingestion or can be triggered manually.');
   }
 }
 
 async function searchCli(query: string) {
+  const storage = getStorage();
   console.log(`Searching: "${query}"`);
   const queryEmb = await embed(query);
-  const results = await searchByEmbedding(queryEmb, { limit: 5 });
+  const results = await storage.searchByEmbedding(queryEmb, { limit: 5 });
 
   if (results.length === 0) {
     console.log('No results found.');

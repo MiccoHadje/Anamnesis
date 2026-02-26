@@ -2,11 +2,27 @@ import { embed } from '../../etl/embedder.js';
 import { getStorage } from '../../storage/index.js';
 import { getConfig } from '../../util/config.js';
 import { truncate, formatDuration, formatRelevance } from '../format.js';
+import { buildContext } from '../../context/builder.js';
 
 export async function handleSearch(args: Record<string, unknown>): Promise<string> {
   const query = String(args.query || '');
   if (!query) return 'Error: query is required';
 
+  const budget = args.budget as number | undefined;
+
+  // When budget is provided, dispatch to smart context builder
+  if (budget && budget > 0) {
+    const result = await buildContext({
+      query,
+      budget,
+      project: args.project as string | undefined,
+      since: args.since as string | undefined,
+      hybrid: args.hybrid as boolean | undefined,
+    });
+    return result.markdown;
+  }
+
+  // Original top-N search behavior
   const project = args.project as string | undefined;
   const limit = (args.limit as number) || 5;
   const since = args.since as string | undefined;

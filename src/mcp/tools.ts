@@ -16,6 +16,7 @@ export const tools = [
         limit: { type: 'number', description: 'Max results (default 5)' },
         since: { type: 'string', description: 'Only search sessions after this date (ISO 8601)' },
         hybrid: { type: 'boolean', description: 'Use hybrid search (semantic + keyword). Better for exact terms.' },
+        budget: { type: 'number', description: 'Target token budget for context assembly. Uses link-enriched, deduplicated results. Typical: 800 (hooks), 2000 (planning), 4000 (research).' },
       },
       required: ['query'],
     },

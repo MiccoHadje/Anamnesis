@@ -4,6 +4,7 @@ import { ingestFile, ingestFiles } from './etl/ingester.js';
 import { discoverFiles, findFileBySessionId } from './etl/discovery.js';
 import { embed } from './etl/embedder.js';
 import { backfillTopics } from './etl/topics.js';
+import { buildContext } from './context/builder.js';
 
 const command = process.argv[2];
 
@@ -42,6 +43,18 @@ async function main() {
       await backfillTopicsCli();
       break;
     }
+    case 'context': {
+      const contextQuery = process.argv.slice(3).filter(a => !a.startsWith('--')).join(' ');
+      if (!contextQuery) { console.error('Usage: anamnesis context <query> [--budget N] [--project NAME]'); process.exit(1); }
+      const budgetArg = process.argv.find(a => a.startsWith('--budget='))?.split('=')[1]
+        || process.argv[process.argv.indexOf('--budget') + 1];
+      const projectArg = process.argv.find(a => a.startsWith('--project='))?.split('=')[1]
+        || process.argv[process.argv.indexOf('--project') + 1];
+      const budget = budgetArg ? parseInt(budgetArg, 10) : 2000;
+      const project = projectArg && !projectArg.startsWith('--') ? projectArg : undefined;
+      await contextCli(contextQuery, budget, project);
+      break;
+    }
     case 'stats': {
       const storage = getStorage();
       const stats = await storage.getStats();
@@ -62,6 +75,9 @@ async function main() {
       console.log('  backfill              Full backfill of all transcripts');
       console.log('  search <query>        Semantic search across turns');
       console.log('  backfill-topics       Extract tags/summaries for all sessions');
+      console.log('  context <query>       Budget-aware context assembly');
+      console.log('    --budget N            Token budget (default 2000)');
+      console.log('    --project NAME        Filter by project');
       console.log('  stats                 Show database statistics');
       break;
   }
@@ -183,6 +199,15 @@ async function backfillTopicsCli() {
     console.log('Running topic linking for updated sessions...');
     console.log('Topic links will be created on next ingestion or can be triggered manually.');
   }
+}
+
+async function contextCli(query: string, budget: number, project?: string) {
+  console.log(`Context: "${query}" (budget: ${budget} tokens${project ? `, project: ${project}` : ''})`);
+  const result = await buildContext({ query, budget, project });
+  console.log('');
+  console.log(result.markdown);
+  console.log('');
+  console.log(`--- ${result.tokenEstimate} tokens | ${result.sessionIds.length} sessions${result.truncated ? ' | truncated' : ''} ---`);
 }
 
 async function searchCli(query: string) {

@@ -27,6 +27,7 @@ node dist/index.js ingest-all              # Discover + ingest new transcripts
 node dist/index.js backfill                # Full backfill of all transcripts
 node dist/index.js backfill-topics         # Extract tags/summaries for all sessions
 node dist/index.js search <query>          # CLI semantic search
+node dist/index.js context <query>         # Budget-aware context assembly (--budget N --project NAME)
 node dist/index.js stats                   # Database statistics
 ```
 
@@ -55,6 +56,12 @@ src/
 │   │   └── report.ts     # handleDailyReport (creates TaskProvider, passes to daily-report)
 │   ├── format.ts         # Shared: truncate, formatDuration, formatRelevance
 │   └── daily-report.ts   # Report generation (uses storage + optional TaskProvider)
+├── context/              # Smart context builder (budget-aware assembly)
+│   ├── types.ts          # ContextRequest, ContextResult, ContextItem, DetailLevel
+│   ├── builder.ts        # buildContext() — orchestrates gather → allocate → render
+│   ├── gather.ts         # Search + dedup + diversity + link traversal
+│   ├── allocate.ts       # Greedy budget fill with progressive detail
+│   └── render.ts         # Progressive-detail markdown formatting
 ├── etl/
 │   ├── parser.ts         # Streaming JSONL parser
 │   ├── chunker.ts        # Groups messages into user+assistant turn pairs
@@ -83,6 +90,7 @@ src/
 | **Domain types** | `src/types.ts` defines all row shapes (`Session`, `Turn`, `SearchResult`, etc.) — no `any` returns from storage. |
 | **Tool dispatch** | `tools.ts` is schemas + dispatch only (~85 lines). Handler logic lives in `mcp/handlers/`. |
 | **TaskProvider** | Optional read-only abstraction for task data. `NudgeProvider` queries Nudge DB directly; `FileSystemProvider` reads markdown/JSON. Created per-request, not a singleton. |
+| **Context builder** | `buildContext()` is a stateless three-phase pipeline (gather → allocate → render). Budget param on `anamnesis_search` dispatches to it; without budget, original top-N behavior is unchanged. |
 | **Config validation** | `validateConfig()` in `config.ts` checks port ranges, URL format, concurrency, search_mode. Throws `ConfigError`. |
 
 ## Infrastructure
@@ -111,6 +119,8 @@ src/
 | Auto-linking | File overlap + semantic similarity + topic overlap (3 layers). Jaccard math in linker.ts, SQL in storage. |
 | Search | Cosine similarity + hybrid (RRF with tsvector + recency boost), min threshold 0.3 |
 | Topic extraction | Ollama (configurable model), 3-5 tags + 1-sentence summary per session |
+| Context builder | Token-budget-aware assembly via gather → allocate → render pipeline, leveraging session link graph |
+| Diversity re-rank | MMR heuristic: same-session=1.0, same-project=0.3 penalty (avoids pairwise embedding comparison) |
 | Idempotency | Track file_path + size + mtime in `anamnesis_ingested_files` |
 | Config | JSON file + env var overrides, tilde resolution, validation on load |
 | Task data | Optional `TaskProvider` interface. Nudge DB or filesystem adapters. Graceful degradation. |

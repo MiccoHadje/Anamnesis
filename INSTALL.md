@@ -70,8 +70,18 @@ curl -fsSL https://ollama.com/install.sh | sh
 **Pull the required model:**
 ```bash
 ollama pull bge-m3        # Required — 1024-dim embeddings (~1.5 GB)
-ollama pull gemma3:12b    # Optional — topic extraction (~7 GB)
+ollama pull gemma3:12b    # Optional — topic extraction (~7 GB, needs ~8 GB VRAM)
 ```
+
+> **GPU requirements for topic extraction:** Topic extraction is optional but recommended. The default model (`gemma3:12b`) needs a GPU with ~8 GB VRAM (e.g., RTX 3070 or better). If you have a less powerful GPU or CPU-only setup, use a smaller model:
+>
+> | Model | Size | VRAM | Quality | Speed |
+> |-------|------|------|---------|-------|
+> | `gemma3:12b` | 8 GB | ~8 GB | Best | ~1-2s/session |
+> | `gemma3:4b` | 3.3 GB | ~4 GB | Good — comparable tags, slightly weaker summaries | ~0.5-0.7s/session |
+> | `gemma3:1b` | 1 GB | ~2 GB | Basic — may miss nuanced topics | fastest |
+>
+> To use a smaller model: `ollama pull gemma3:4b` and set `"model": "gemma3:4b"` in the `topic_model` section of your config. Anamnesis works fine without topic extraction — search and file-based linking still work. Topics add a third linking dimension and improve search relevance.
 
 **Verify:**
 ```bash
@@ -262,7 +272,9 @@ These indexes are created after the initial load because HNSW builds a better gr
 node dist/index.js backfill-topics
 ```
 
-This uses a local LLM (gemma3:12b by default) to extract 3-8 topic tags and a one-sentence summary per session. With the default `full` strategy, the extractor reads the entire session content, compresses it by stripping common English words (~25% reduction), splits into chunks, and merges tags across passes. Larger sessions take longer (a 100+ turn session might take 30-40 seconds), but produce more accurate tags. Set `topic_model.strategy` to `first_message` for faster but less thorough extraction. Topics improve search quality and enable topic-based auto-linking, but Anamnesis works without them.
+This uses a local LLM (gemma3:12b by default) to extract 3-8 topic tags and a one-sentence summary per session. With the default `full` strategy, the extractor reads the entire session content, compresses it by stripping common English words (~25% reduction), splits into chunks, and merges tags across passes. Larger sessions take longer (a 100+ turn session might take 30-40 seconds), but produce more accurate tags. Set `topic_model.strategy` to `first_message` for faster but less thorough extraction.
+
+**Performance note:** This step uses your GPU heavily. With `gemma3:12b`, expect ~1-2 seconds per session on a modern GPU (RTX 3070+). A full backfill of 500 sessions takes ~15-20 minutes. If your GPU is slower or you're running CPU-only, consider using `gemma3:4b` (set in config) — it produces comparable tags at 2-3x the speed with half the VRAM. Topics improve search quality and enable topic-based auto-linking, but Anamnesis works without them.
 
 **Verify:**
 ```bash

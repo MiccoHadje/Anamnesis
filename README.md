@@ -33,7 +33,7 @@ Each conversation turn (user message + assistant response) becomes a searchable 
 - **PostgreSQL** with [pgvector](https://github.com/pgvector/pgvector) extension
 - **Ollama** with models:
   - `bge-m3` — embeddings (required)
-  - `gemma3:12b` — topic extraction (optional)
+  - `gemma3:12b` — topic extraction (optional, needs ~8 GB VRAM; `gemma3:4b` works with ~4 GB)
 
 ## Quick Start
 
@@ -74,7 +74,7 @@ Create `anamnesis.config.json` from the example file. All settings can also be o
 | `database.password` | (empty) | `ANAMNESIS_DB_PASSWORD` | Database password (omit for trust/peer auth) |
 | `ollama.url` | `http://localhost:11434` | `ANAMNESIS_OLLAMA_URL` | Ollama server URL |
 | `ollama.model` | `bge-m3` | — | Embedding model |
-| `topic_model.model` | `gemma3:12b` | — | Topic extraction model |
+| `topic_model.model` | `gemma3:12b` | — | Topic extraction model (use `gemma3:4b` for lower VRAM) |
 | `exclude_projects` | `[]` | — | Project directory names to skip |
 | `exclude_sessions` | `[]` | — | Specific session UUIDs to skip |
 | `concurrency.embedding` | `4` | — | Parallel embedding requests |

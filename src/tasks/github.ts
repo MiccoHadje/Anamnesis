@@ -54,8 +54,9 @@ export class GitHubProvider implements TaskProvider {
 
   private async ghSearch(query: string): Promise<Array<{ title: string; closed_at?: string }>> {
     try {
+      const encoded = query.replace(/ /g, '+');
       const result = await this.exec(
-        ['api', 'search/issues', '-q', query, '--jq', '.items'],
+        ['api', `search/issues?q=${encoded}`, '--jq', '.items'],
         15000
       );
       return JSON.parse(result || '[]');

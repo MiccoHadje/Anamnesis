@@ -44,15 +44,20 @@ async function main() {
       break;
     }
     case 'context': {
-      const contextQuery = process.argv.slice(3).filter(a => !a.startsWith('--')).join(' ');
+      const cliArgs = process.argv.slice(3);
+      const queryParts: string[] = [];
+      let ctxBudget = 2000;
+      let ctxProject: string | undefined;
+      for (let i = 0; i < cliArgs.length; i++) {
+        if (cliArgs[i] === '--budget' && cliArgs[i + 1]) { ctxBudget = parseInt(cliArgs[++i], 10); }
+        else if (cliArgs[i].startsWith('--budget=')) { ctxBudget = parseInt(cliArgs[i].split('=')[1], 10); }
+        else if (cliArgs[i] === '--project' && cliArgs[i + 1]) { ctxProject = cliArgs[++i]; }
+        else if (cliArgs[i].startsWith('--project=')) { ctxProject = cliArgs[i].split('=')[1]; }
+        else if (!cliArgs[i].startsWith('--')) { queryParts.push(cliArgs[i]); }
+      }
+      const contextQuery = queryParts.join(' ');
       if (!contextQuery) { console.error('Usage: anamnesis context <query> [--budget N] [--project NAME]'); process.exit(1); }
-      const budgetArg = process.argv.find(a => a.startsWith('--budget='))?.split('=')[1]
-        || process.argv[process.argv.indexOf('--budget') + 1];
-      const projectArg = process.argv.find(a => a.startsWith('--project='))?.split('=')[1]
-        || process.argv[process.argv.indexOf('--project') + 1];
-      const budget = budgetArg ? parseInt(budgetArg, 10) : 2000;
-      const project = projectArg && !projectArg.startsWith('--') ? projectArg : undefined;
-      await contextCli(contextQuery, budget, project);
+      await contextCli(contextQuery, ctxBudget, ctxProject);
       break;
     }
     case 'stats': {

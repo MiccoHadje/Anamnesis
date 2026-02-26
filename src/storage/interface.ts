@@ -12,6 +12,8 @@ import type {
   SessionFiles,
   SessionTags,
   SimilarSession,
+  SessionMeta,
+  SessionLink,
 } from '../types.js';
 
 /**
@@ -60,6 +62,10 @@ export interface StorageBackend {
   getSessionsWithOverlappingTags(sessionId: string, tags: string[]): Promise<SessionTags[]>;
   findSimilarSessions(sessionId: string, topN?: number): Promise<SimilarSession[]>;
   upsertSessionLink(a: string, b: string, linkType: string, score: number, detail: string): Promise<void>;
+
+  // Context builder
+  getSessionMetaBatch(sessionIds: string[]): Promise<SessionMeta[]>;
+  getLinksForSessions(sessionIds: string[]): Promise<SessionLink[]>;
 
   // Stats
   getStats(): Promise<Stats>;

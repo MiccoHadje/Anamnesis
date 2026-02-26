@@ -14,6 +14,8 @@ import type {
   SessionFiles,
   SessionTags,
   SimilarSession,
+  SessionMeta,
+  SessionLink,
 } from '../types.js';
 import { getPool } from '../db/client.js';
 
@@ -456,6 +458,35 @@ export class PgStorage implements StorageBackend {
        ON CONFLICT (session_a, session_b, link_type) DO UPDATE SET score = $4, shared_detail = $5`,
       [a, b, linkType, score, detail]
     );
+  }
+
+  // --- Context builder ---
+
+  async getSessionMetaBatch(sessionIds: string[]): Promise<SessionMeta[]> {
+    if (sessionIds.length === 0) return [];
+    const { rows } = await this.pool.query(
+      `SELECT session_id, project_name, summary, tags, started_at, turn_count
+       FROM anamnesis_sessions
+       WHERE session_id = ANY($1)`,
+      [sessionIds]
+    );
+    return rows;
+  }
+
+  async getLinksForSessions(sessionIds: string[]): Promise<SessionLink[]> {
+    if (sessionIds.length === 0) return [];
+    const { rows } = await this.pool.query(
+      `SELECT l.session_a, l.session_b, l.link_type, l.score, l.shared_detail,
+              s.project_name, s.started_at, s.summary
+       FROM anamnesis_session_links l
+       JOIN anamnesis_sessions s ON s.session_id = CASE
+         WHEN l.session_a = ANY($1) THEN l.session_b ELSE l.session_a END
+       WHERE (l.session_a = ANY($1) OR l.session_b = ANY($1))
+         AND l.score >= 0.3
+       ORDER BY l.score DESC`,
+      [sessionIds]
+    );
+    return rows;
   }
 
   // --- Stats ---

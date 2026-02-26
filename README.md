@@ -8,6 +8,7 @@
 
 - **Semantic search** — Find past sessions by meaning, not just keywords
 - **Hybrid search** — Combines vector similarity with full-text keyword search (RRF fusion)
+- **Smart context builder** — Token-budget-aware context assembly with deduplication, diversity re-ranking, and link graph traversal
 - **Auto-ingestion** — SessionEnd hook + scheduled task keep the database current
 - **Auto-linking** — Sessions are linked by shared files, semantic similarity, and topic overlap
 - **Topic extraction** — Auto-generated tags and summaries per session via local LLM
@@ -97,6 +98,7 @@ Semantic similarity search across past sessions.
 | `limit` | number | no | Max results (default 5) |
 | `since` | string | no | Only search after this date (ISO 8601) |
 | `hybrid` | boolean | no | Use hybrid search (semantic + keyword) |
+| `budget` | number | no | Token budget for smart context assembly (e.g., 800, 2000, 4000). When set, uses link-enriched, deduplicated results with progressive detail levels. |
 
 ### `anamnesis_recent`
 
@@ -148,6 +150,7 @@ Requires the `reporting` section in config. See `anamnesis.config.example.json`.
 | `node dist/index.js backfill` | Full backfill of all transcripts |
 | `node dist/index.js backfill-topics` | Extract tags/summaries for sessions missing them |
 | `node dist/index.js search <query>` | Semantic search from the command line |
+| `node dist/index.js context <query> [--budget N] [--project NAME]` | Budget-aware context assembly (default 2000 tokens) |
 | `node dist/index.js stats` | Show database statistics |
 
 Add `--force` to `ingest` or `ingest-all` to re-process already-ingested files.
@@ -199,6 +202,21 @@ Anamnesis offers two search modes:
 **Hybrid search** (default) — Combines vector similarity with PostgreSQL full-text search using Reciprocal Rank Fusion (RRF). Includes a recency boost. Better for queries mixing concepts with specific terms.
 
 Both modes enforce a minimum similarity threshold (0.3) to filter noise.
+
+## Smart Context Builder
+
+When `anamnesis_search` receives a `budget` parameter, it switches from top-N retrieval to a three-phase context assembly pipeline:
+
+1. **Gather** — Overfetch 20 results, deduplicate by session (keeping related turns as drill-down hints), apply MMR diversity re-ranking, traverse the session link graph for top hits
+2. **Allocate** — Greedily assign detail levels (full/summary/title) based on remaining token budget
+3. **Render** — Format progressive-detail markdown with "See also" turns and "Linked" session hints
+
+This produces richer, more diverse results than simple top-N search, especially as the database grows. Typical budgets:
+- **800** — Hooks and quick context (5-7 sessions, concise)
+- **2000** — Planning and moderate context
+- **4000** — Deep research with linked sessions
+
+Also available via CLI: `node dist/index.js context "query" --budget 2000`
 
 ## Database Schema
 

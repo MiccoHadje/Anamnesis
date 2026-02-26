@@ -193,6 +193,18 @@ export interface SimilarSession {
   similarity: number;
 }
 
+// --- Session Meta (lightweight, no turns) ---
+
+/** Lightweight session metadata for context builder batch lookups. */
+export interface SessionMeta {
+  session_id: string;
+  project_name: string | null;
+  summary: string | null;
+  tags: string[];
+  started_at: Date | null;
+  turn_count: number;
+}
+
 // --- Config ---
 
 export class ConfigError extends Error {

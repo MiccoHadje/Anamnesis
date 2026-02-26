@@ -12,3 +12,6 @@ anamnesis.config.json
 !.claude/skills/install/
 docs/Anamnesis_Daily/
 docs/recipes/
+images/
+publications/
+.playwright-mcp/

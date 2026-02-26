@@ -44,6 +44,7 @@ src/
 ├── tasks/                # Task Provider abstraction (read-only task data)
 │   ├── index.ts          # Factory: createTaskProvider() from config
 │   ├── interface.ts      # TaskProvider interface + TaskCompletion type
+│   ├── github.ts         # GitHubProvider — queries GitHub Issues via gh CLI
 │   ├── nudge.ts          # NudgeProvider — queries Nudge PostgreSQL directly
 │   └── filesystem.ts     # FileSystemProvider — reads markdown/JSON todo files
 ├── mcp/
@@ -89,7 +90,7 @@ src/
 | **Transaction** | Write operations (insert session/turns, update embeddings) go through `storage.transaction()` which exposes a `Transaction` interface. |
 | **Domain types** | `src/types.ts` defines all row shapes (`Session`, `Turn`, `SearchResult`, etc.) — no `any` returns from storage. |
 | **Tool dispatch** | `tools.ts` is schemas + dispatch only (~85 lines). Handler logic lives in `mcp/handlers/`. |
-| **TaskProvider** | Optional read-only abstraction for task data. `NudgeProvider` queries Nudge DB directly; `FileSystemProvider` reads markdown/JSON. Created per-request, not a singleton. |
+| **TaskProvider** | Optional read-only abstraction for task data. `GitHubProvider` (recommended) uses `gh` CLI; `FileSystemProvider` reads markdown/JSON; `NudgeProvider` queries Nudge DB. Created per-request, not a singleton. |
 | **Context builder** | `buildContext()` is a stateless three-phase pipeline (gather → allocate → render). Budget param on `anamnesis_search` dispatches to it; without budget, original top-N behavior is unchanged. |
 | **Config validation** | `validateConfig()` in `config.ts` checks port ranges, URL format, concurrency, search_mode. Throws `ConfigError`. |
 
@@ -123,7 +124,7 @@ src/
 | Diversity re-rank | MMR heuristic: same-session=1.0, same-project=0.3 penalty (avoids pairwise embedding comparison) |
 | Idempotency | Track file_path + size + mtime in `anamnesis_ingested_files` |
 | Config | JSON file + env var overrides, tilde resolution, validation on load |
-| Task data | Optional `TaskProvider` interface. Nudge DB or filesystem adapters. Graceful degradation. |
+| Task data | Optional `TaskProvider` interface. GitHub Issues (recommended), filesystem, or Nudge adapters. Graceful degradation. |
 
 ## Database Tables
 

@@ -26,12 +26,12 @@
     "topics": 2
   },
   "tasks": {
-    "provider": "nudge",
-    "nudge": {
-      "host": "localhost",
-      "port": 5432,
-      "database": "nudge",
-      "user": "anamnesis"
+    "provider": "github",
+    "github": {
+      "repos": {
+        "MyProject": "myuser/my-project"
+      },
+      "blocked_label": "blocked"
     }
   },
   "reporting": {
@@ -40,7 +40,7 @@
         "name": "MyProject",
         "anamnesis_project": "MyProject",
         "daily_log_dir": "docs/daily",
-        "nudge_project": "@MyProject"
+        "task_project": "MyProject"
       }
     ],
     "reports_dir": "~/.claude/reports"

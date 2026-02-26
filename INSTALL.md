@@ -526,6 +526,6 @@ If Ollama is slow, your machine may be under memory pressure. The bge-m3 model n
 Once Anamnesis is running, you'll accumulate session memory over time. Here are some optional enhancements:
 
 - **Daily reporting** — Add the `reporting` section to your config and install the `/daily_duties` skill from `skills/`. See `skills/README.md`.
-- **Task integration** — If you use [Nudge](https://github.com/MiccoHadje/Nudge) for task management, add the `tasks` section to your config to enrich reports with task completion data.
+- **Task integration** — Add the `tasks` section to your config to enrich reports with task completion data. GitHub Issues (`gh` CLI) is the recommended default; filesystem and [Nudge](https://github.com/MiccoHadje/Nudge) adapters are also available.
 - **Topic extraction** — Run `backfill-topics` periodically to generate tags and summaries. This improves search and enables topic-based session linking.
 - **Tune concurrency** — If you have a powerful machine, increase `concurrency.embedding` (default 4) for faster backfills.

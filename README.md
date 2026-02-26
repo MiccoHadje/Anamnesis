@@ -244,7 +244,13 @@ The `anamnesis_daily_report` MCP tool and `/daily_duties` skill work together fo
 - The **MCP tool** queries the database and returns structured markdown reports
 - The **skill** orchestrates a full reporting workflow: gap detection, per-project logs, cross-project summaries, weekly retros, monthly highlights
 
-Configure the `reporting` section in `anamnesis.config.json` with your projects. Optionally integrate with [Nudge](https://github.com/MiccoHadje/Nudge) for task completion data.
+Configure the `reporting` section in `anamnesis.config.json` with your projects. Optionally add a task provider to enrich reports with completion data:
+
+| Provider | Config | Requires | Best for |
+|----------|--------|----------|----------|
+| `github` | `tasks.github` | `gh` CLI | GitHub Issues users |
+| `filesystem` | `tasks.filesystem` | None | Simple TODO files |
+| `nudge` | `tasks.nudge` | PostgreSQL + Nudge | [Nudge](https://github.com/MiccoHadje/Nudge) users |
 
 ## Scheduled Ingestion (Windows)
 

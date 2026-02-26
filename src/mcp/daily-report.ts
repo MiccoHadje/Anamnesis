@@ -6,6 +6,7 @@ import { formatDuration } from './format.js';
 export interface DailyReportProject {
   name: string;
   anamnesis_project: string;
+  task_project?: string;
   nudge_project?: string;
 }
 
@@ -42,6 +43,7 @@ export async function generateProjectReport(
 
   // Fetch task data if provider available
   const taskData = await getTaskData(taskProvider, nudgeProject || projectName, date);
+  // Note: nudgeProject param is kept for backward compat; callers should prefer task_project
 
   if (sessions.length === 0 && !taskData) return null;
 
@@ -135,7 +137,7 @@ export async function generateCrossProjectReport(
 
   for (const p of projects) {
     const sessions = await storage.getSessionsForDate(date, p.anamnesis_project);
-    const taskData = await getTaskData(taskProvider, p.nudge_project || p.name, date);
+    const taskData = await getTaskData(taskProvider, p.task_project || p.nudge_project || p.name, date);
     projectData.push({ name: p.name, sessions, taskData });
   }
 

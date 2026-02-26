@@ -2,6 +2,7 @@ import type { AnamnesisConfig } from '../util/config.js';
 import type { TaskProvider } from './interface.js';
 import { NudgeProvider } from './nudge.js';
 import { FileSystemProvider } from './filesystem.js';
+import { GitHubProvider } from './github.js';
 
 export type { TaskProvider, TaskCompletion } from './interface.js';
 
@@ -19,6 +20,9 @@ export function createTaskProvider(config: AnamnesisConfig): TaskProvider | null
     case 'filesystem':
       if (!config.tasks.filesystem) return null;
       return new FileSystemProvider(config.tasks.filesystem);
+    case 'github':
+      if (!config.tasks.github) return null;
+      return new GitHubProvider(config.tasks.github);
     default:
       return null;
   }

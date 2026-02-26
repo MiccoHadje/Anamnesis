@@ -35,15 +35,17 @@ export interface AnamnesisConfig {
     topics: number;
   };
   tasks?: {
-    provider: 'nudge' | 'filesystem';
+    provider: 'nudge' | 'filesystem' | 'github';
     nudge?: { host: string; port: number; database: string; user: string; password?: string };
     filesystem?: { path: string; name?: string };
+    github?: { repos: Record<string, string>; blocked_label?: string };
   };
   reporting?: {
     projects: Array<{
       name: string;
       anamnesis_project: string;
       daily_log_dir?: string;
+      task_project?: string;
       nudge_project?: string;
     }>;
     reports_dir: string;

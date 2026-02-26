@@ -32,7 +32,7 @@ export async function handleDailyReport(args: Record<string, unknown>): Promise<
         const available = config.reporting.projects.map(p => p.name).join(', ');
         return `Error: Project "${projectName}" not found in reporting config. Available: ${available}`;
       }
-      const report = await generateProjectReport(date, proj.name, proj.anamnesis_project, taskProvider ?? undefined, proj.nudge_project);
+      const report = await generateProjectReport(date, proj.name, proj.anamnesis_project, taskProvider ?? undefined, proj.task_project || proj.nudge_project);
       return report || `No activity found for ${proj.name} on ${date}.`;
     }
 

@@ -81,7 +81,9 @@ ollama pull gemma3:12b    # Optional — topic extraction (~7 GB, needs ~8 GB VR
 > | `gemma3:4b` | 3.3 GB | ~4 GB | Good — comparable tags, slightly weaker summaries | ~0.5-0.7s/session |
 > | `gemma3:1b` | 1 GB | ~2 GB | Basic — may miss nuanced topics | fastest |
 >
-> To use a smaller model: `ollama pull gemma3:4b` and set `"model": "gemma3:4b"` in the `topic_model` section of your config. Anamnesis works fine without topic extraction — search and file-based linking still work. Topics add a third linking dimension and improve search relevance.
+> To use a smaller model: `ollama pull gemma3:4b` and set `"model": "gemma3:4b"` in the `topic_model` section of your config. Topics add a third linking dimension and improve search relevance.
+>
+> **Remote Ollama:** If you have Ollama running on another machine (e.g., a GPU server on your LAN), set `topic_model.url` (and optionally `ollama.url`) to point to it — e.g., `"url": "http://192.168.1.10:11434"`. This lets you develop on a laptop while offloading inference to a more capable machine. Expect slightly higher latency (~5-10s/session over WiFi) but identical results.
 
 **Verify:**
 ```bash

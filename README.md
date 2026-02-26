@@ -248,7 +248,7 @@ Configure the `reporting` section in `anamnesis.config.json` with your projects.
 
 | Provider | Config | Requires | Best for |
 |----------|--------|----------|----------|
-| `github` | `tasks.github` | `gh` CLI | GitHub Issues users |
+| `github` | `tasks.github` | [`gh` CLI](https://cli.github.com/) (authenticated) | GitHub Issues users |
 | `filesystem` | `tasks.filesystem` | None | Simple TODO files |
 | `nudge` | `tasks.nudge` | PostgreSQL + Nudge | [Nudge](https://github.com/MiccoHadje/Nudge) users |
 

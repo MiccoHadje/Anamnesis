@@ -7,7 +7,7 @@ export const tools = [
   {
     name: 'anamnesis_search',
     description:
-      'Search past Claude Code sessions by semantic similarity. Returns the most relevant conversation turns from past sessions. Use for: finding past decisions, implementations, debugging sessions, or any historical context.',
+      'Search YOUR memory — all past Claude Code sessions across all projects. This is how you recall past decisions, discussions, implementations, and debugging sessions. USE THIS PROACTIVELY when the user references past work, asks what was decided, or asks about anything that may have come up in a prior session. Do not say "I don\'t have context from past sessions" without searching here first.',
     inputSchema: {
       type: 'object' as const,
       properties: {

@@ -3,6 +3,8 @@ import type { TaskProvider } from './interface.js';
 import { NudgeProvider } from './nudge.js';
 import { FileSystemProvider } from './filesystem.js';
 import { GitHubProvider } from './github.js';
+import { TodoistProvider } from './todoist.js';
+import { LinearProvider } from './linear.js';
 
 export type { TaskProvider, TaskCompletion } from './interface.js';
 
@@ -23,6 +25,12 @@ export function createTaskProvider(config: AnamnesisConfig): TaskProvider | null
     case 'github':
       if (!config.tasks.github) return null;
       return new GitHubProvider(config.tasks.github);
+    case 'todoist':
+      if (!config.tasks.todoist) return null;
+      return new TodoistProvider(config.tasks.todoist);
+    case 'linear':
+      if (!config.tasks.linear) return null;
+      return new LinearProvider(config.tasks.linear);
     default:
       return null;
   }

@@ -35,10 +35,12 @@ export interface AnamnesisConfig {
     topics: number;
   };
   tasks?: {
-    provider: 'nudge' | 'filesystem' | 'github';
+    provider: 'nudge' | 'filesystem' | 'github' | 'todoist' | 'linear';
     nudge?: { host: string; port: number; database: string; user: string; password?: string };
     filesystem?: { path: string; name?: string };
     github?: { repos: Record<string, string>; blocked_label?: string };
+    todoist?: { api_token: string; projects: Record<string, string>; blocked_label?: string };
+    linear?: { api_key: string; teams: Record<string, string>; blocked_label?: string };
   };
   reporting?: {
     projects: Array<{

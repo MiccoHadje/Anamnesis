@@ -249,6 +249,8 @@ Configure the `reporting` section in `anamnesis.config.json` with your projects.
 | Provider | Config | Requires | Best for |
 |----------|--------|----------|----------|
 | `github` | `tasks.github` | [`gh` CLI](https://cli.github.com/) (authenticated) | GitHub Issues users |
+| `todoist` | `tasks.todoist` | [API token](https://app.todoist.com/app/settings/integrations/developer) | Todoist users |
+| `linear` | `tasks.linear` | [API key](https://linear.app/settings/api) | Linear users |
 | `filesystem` | `tasks.filesystem` | None | Simple TODO files |
 | `nudge` | `tasks.nudge` | PostgreSQL + Nudge | [Nudge](https://github.com/MiccoHadje/Nudge) users |
 

@@ -34,6 +34,26 @@
       "blocked_label": "blocked"
     }
   },
+  "_tasks_todoist_example": {
+    "provider": "todoist",
+    "todoist": {
+      "api_token": "your-api-token-from-todoist-settings",
+      "projects": {
+        "MyProject": "todoist-project-id"
+      },
+      "blocked_label": "blocked"
+    }
+  },
+  "_tasks_linear_example": {
+    "provider": "linear",
+    "linear": {
+      "api_key": "lin_api_your-key-here",
+      "teams": {
+        "MyProject": "team-key-or-id"
+      },
+      "blocked_label": "blocked"
+    }
+  },
   "reporting": {
     "projects": [
       {

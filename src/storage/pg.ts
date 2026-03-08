@@ -92,6 +92,39 @@ class PgTransaction implements Transaction {
     );
   }
 
+  async mergeSessionEmbedding(sessionId: string, newEmbeddings: number[][], existingCount: number): Promise<void> {
+    // Fetch existing session embedding, then compute weighted average with new turns
+    const { rows } = await this.client.query(
+      'SELECT session_embedding FROM anamnesis_sessions WHERE session_id = $1',
+      [sessionId]
+    );
+    if (!rows[0]?.session_embedding) {
+      // No existing embedding — just average the new ones
+      const avg = newEmbeddings[0].map((_, dim) => {
+        const sum = newEmbeddings.reduce((s, e) => s + e[dim], 0);
+        return sum / newEmbeddings.length;
+      });
+      await this.updateSessionEmbedding(sessionId, avg);
+      return;
+    }
+
+    // Parse existing embedding from pgvector format
+    const oldEmb: number[] = typeof rows[0].session_embedding === 'string'
+      ? JSON.parse(rows[0].session_embedding.replace('[', '[').replace(']', ']'))
+      : rows[0].session_embedding;
+
+    const newCount = newEmbeddings.length;
+    const totalCount = existingCount + newCount;
+
+    // Weighted merge: (old_avg * old_n + sum(new)) / total_n
+    const merged = oldEmb.map((oldVal, dim) => {
+      const newSum = newEmbeddings.reduce((s, e) => s + e[dim], 0);
+      return (oldVal * existingCount + newSum) / totalCount;
+    });
+
+    await this.updateSessionEmbedding(sessionId, merged);
+  }
+
   async deleteSessionData(sessionId: string): Promise<void> {
     await this.client.query('DELETE FROM anamnesis_sessions WHERE session_id = $1', [sessionId]);
   }
@@ -171,6 +204,14 @@ export class PgStorage implements StorageBackend {
   }
 
   // --- Sessions ---
+
+  async getSessionTurnCount(sessionId: string): Promise<number> {
+    const { rows } = await this.pool.query(
+      'SELECT turn_count FROM anamnesis_sessions WHERE session_id = $1',
+      [sessionId]
+    );
+    return rows.length > 0 ? Number(rows[0].turn_count) : 0;
+  }
 
   async getSession(sessionId: string): Promise<SessionDetail | null> {
     const { rows: sessions } = await this.pool.query(

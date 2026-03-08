@@ -23,6 +23,7 @@ export interface Transaction {
   insertSession(session: SessionInsert): Promise<void>;
   insertTurnWithEmbedding(turn: TurnInsert): Promise<void>;
   updateSessionEmbedding(sessionId: string, embedding: number[]): Promise<void>;
+  mergeSessionEmbedding(sessionId: string, newEmbeddings: number[][], existingCount: number): Promise<void>;
   deleteSessionData(sessionId: string): Promise<void>;
   upsertIngestedFile(path: string, size: number, mtime: Date, sessionId: string): Promise<void>;
 }
@@ -41,6 +42,7 @@ export interface StorageBackend {
   upsertIngestedFile(path: string, size: number, mtime: Date, sessionId: string): Promise<void>;
 
   // Sessions
+  getSessionTurnCount(sessionId: string): Promise<number>;
   getSession(sessionId: string): Promise<SessionDetail | null>;
   getRecentSessions(opts?: { project?: string; days?: number; file?: string; limit?: number }): Promise<RecentSession[]>;
   getSessionsForDate(date: string, project?: string): Promise<SessionSummary[]>;

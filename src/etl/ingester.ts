@@ -5,15 +5,21 @@ import { extractSessionMetadata } from './metadata.js';
 import { buildEmbeddingText } from '../util/text.js';
 import { linkSession } from './linker.js';
 import { extractTopics } from './topics.js';
-import { embed, embedBatch, averageEmbeddings, ensureOllama } from './embedder.js';
+import { embedBatch, averageEmbeddings, ensureOllama } from './embedder.js';
 import { getStorage } from '../storage/index.js';
 import type { IngestResult } from '../types.js';
 
 export type { IngestResult };
 
+/** Minimum new turns before re-running topic extraction on an incremental ingest. */
+const TOPIC_RE_EXTRACT_THRESHOLD = 5;
+
 /**
  * Ingest a single JSONL transcript file:
  *   parse → chunk → embed → store (with embeddings)
+ *
+ * Supports incremental ingestion: if a session already exists, only new turns
+ * are embedded. Session metadata is always updated.
  */
 export async function ingestFile(
   filePath: string,
@@ -43,6 +49,108 @@ export async function ingestFile(
   }
 
   const meta = extractSessionMetadata(allMessages, turns, filePath);
+
+  // Check for existing session to enable incremental mode
+  const existingTurnCount = opts?.force ? 0 : await storage.getSessionTurnCount(meta.sessionId);
+  const isIncremental = existingTurnCount > 0 && turns.length > existingTurnCount;
+  const isUnchanged = existingTurnCount > 0 && turns.length === existingTurnCount;
+
+  if (isUnchanged) {
+    // Same turn count — file may have changed (mtime) but no new content.
+    // Just update the ingested file record and skip embedding.
+    const stat = statSync(filePath);
+    await storage.upsertIngestedFile(filePath, stat.size, stat.mtime, meta.sessionId);
+    return { sessionId: meta.sessionId, turnCount: turns.length, skipped: true };
+  }
+
+  if (isIncremental) {
+    // Only embed new turns
+    const newTurns = turns.slice(existingTurnCount);
+    const newEmbTexts = newTurns.map(t => buildEmbeddingText(t, meta.projectName));
+
+    log(`  Session: ${meta.sessionId} (${meta.projectName || '?'}) — ${newTurns.length} new turns (${existingTurnCount} existing)`);
+    log(`  Embedding ${newEmbTexts.length} new turns...`);
+
+    const newEmbeddings = await embedBatch(newEmbTexts, undefined, (done, total) => {
+      if (done % 10 === 0 || done === total) {
+        log(`  Embedded ${done}/${total}`);
+      }
+    });
+
+    await storage.transaction(async (tx) => {
+      // Update session metadata (end time, turn count, files, etc.)
+      await tx.insertSession({
+        session_id: meta.sessionId,
+        project_name: meta.projectName,
+        cwd: meta.cwd,
+        git_branch: meta.gitBranch,
+        model: meta.model,
+        started_at: meta.startedAt,
+        ended_at: meta.endedAt,
+        turn_count: turns.length,
+        files_touched: meta.filesTouched,
+        tools_used: meta.toolsUsed,
+        is_subagent: meta.isSubagent,
+        parent_session_id: meta.parentSessionId,
+      });
+
+      // Insert only new turns
+      for (let i = 0; i < newTurns.length; i++) {
+        const turn = newTurns[i];
+        await tx.insertTurnWithEmbedding({
+          session_id: meta.sessionId,
+          turn_index: turn.turnIndex,
+          user_content: turn.userContent,
+          assistant_content: turn.assistantContent,
+          tool_calls: turn.toolCalls,
+          files_in_turn: turn.filesInTurn,
+          timestamp_start: turn.timestampStart,
+          timestamp_end: turn.timestampEnd,
+          token_count: turn.tokenCount,
+          embedding_text: newEmbTexts[i],
+          embedding: newEmbeddings[i],
+        });
+      }
+
+      // Update session embedding via weighted merge
+      await tx.mergeSessionEmbedding(meta.sessionId, newEmbeddings, existingTurnCount);
+
+      // Record ingested file
+      const stat = statSync(filePath);
+      await tx.upsertIngestedFile(filePath, stat.size, stat.mtime, meta.sessionId);
+    });
+
+    log(`  Stored ${newTurns.length} new turns (${turns.length} total).`);
+
+    // Re-link (new files may have been touched)
+    const links = await linkSession(meta.sessionId);
+    if (links.fileLinks || links.semanticLinks || links.topicLinks) {
+      log(`  Linked: ${links.fileLinks} file overlap, ${links.semanticLinks} semantic, ${links.topicLinks} topic.`);
+    }
+
+    // Only re-extract topics if enough new turns
+    if (newTurns.length >= TOPIC_RE_EXTRACT_THRESHOLD) {
+      try {
+        const topics = await extractTopics(meta.sessionId, meta.projectName || null, meta.filesTouched, meta.toolsUsed);
+        if (topics) {
+          await storage.updateSessionTopics(meta.sessionId, topics.tags, topics.summary);
+          log(`  Topics: [${topics.tags.join(', ')}]`);
+        }
+      } catch (err) {
+        log(`  Topic extraction skipped: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+
+    return {
+      sessionId: meta.sessionId,
+      turnCount: turns.length,
+      projectName: meta.projectName,
+      skipped: false,
+    };
+  }
+
+  // --- Full ingest (new session or --force) ---
+
   log(`  Session: ${meta.sessionId} (${meta.projectName || '?'}) — ${turns.length} turns`);
 
   // Build embedding texts

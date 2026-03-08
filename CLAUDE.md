@@ -124,6 +124,7 @@ src/
 | Topic extraction | Ollama (configurable model), 3-5 tags + 1-sentence summary per session |
 | Context builder | Token-budget-aware assembly via gather → allocate → render pipeline, leveraging session link graph |
 | Diversity re-rank | MMR heuristic: same-session=1.0, same-project=0.3 penalty (avoids pairwise embedding comparison) |
+| Incremental ingest | Only new turns are embedded on re-ingest. Session embedding updated via weighted merge. Topic re-extraction only if 5+ new turns. |
 | Idempotency | Track file_path + size + mtime in `anamnesis_ingested_files` |
 | Config | JSON file + env var overrides, tilde resolution, validation on load |
 | Task data | Optional `TaskProvider` interface. GitHub Issues (recommended), Todoist, Linear, filesystem, or Nudge adapters. Graceful degradation. |

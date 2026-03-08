@@ -9,7 +9,7 @@
 - **Semantic search** — Find past sessions by meaning, not just keywords
 - **Hybrid search** — Combines vector similarity with full-text keyword search (RRF fusion)
 - **Smart context builder** — Token-budget-aware context assembly with deduplication, diversity re-ranking, and link graph traversal
-- **Auto-ingestion** — SessionEnd hook + scheduled task keep the database current
+- **Incremental ingestion** — Only new turns are embedded when a session grows; existing turns are never re-processed
 - **Auto-linking** — Sessions are linked by shared files, semantic similarity, and topic overlap
 - **Topic extraction** — Auto-generated tags and summaries per session via local LLM
 - **Proactive recall** — Session-start hook injects relevant context automatically

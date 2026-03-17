@@ -42,6 +42,12 @@ export interface AnamnesisConfig {
     todoist?: { api_token: string; projects: Record<string, string>; blocked_label?: string };
     linear?: { api_key: string; teams: Record<string, string>; blocked_label?: string };
   };
+  server?: {
+    port: number;
+    host: string;
+    ingest_interval_minutes: number;
+    pid_file: string;
+  };
   reporting?: {
     projects: Array<{
       name: string;
@@ -115,6 +121,12 @@ function applyEnvOverrides(config: AnamnesisConfig): void {
   if (process.env.ANAMNESIS_OLLAMA_URL) {
     config.ollama.url = process.env.ANAMNESIS_OLLAMA_URL;
   }
+  if (process.env.ANAMNESIS_SERVER_PORT && config.server) {
+    config.server.port = parseInt(process.env.ANAMNESIS_SERVER_PORT, 10);
+  }
+  if (process.env.ANAMNESIS_SERVER_HOST && config.server) {
+    config.server.host = process.env.ANAMNESIS_SERVER_HOST;
+  }
 }
 
 /** Validate config values. Throws ConfigError on invalid config. */
@@ -146,6 +158,15 @@ function validateConfig(config: AnamnesisConfig): void {
   if (config.search_mode !== 'hybrid' && config.search_mode !== 'vector') {
     throw new ConfigError(`Invalid search_mode: "${config.search_mode}" (must be "hybrid" or "vector")`);
   }
+
+  if (config.server) {
+    if (config.server.port < 1 || config.server.port > 65535) {
+      throw new ConfigError(`Invalid server.port: ${config.server.port} (must be 1-65535)`);
+    }
+    if (config.server.ingest_interval_minutes < 1) {
+      throw new ConfigError(`Invalid server.ingest_interval_minutes: ${config.server.ingest_interval_minutes} (must be >= 1)`);
+    }
+  }
 }
 
 export function getConfig(): AnamnesisConfig {
@@ -163,6 +184,15 @@ export function getConfig(): AnamnesisConfig {
       concurrency: { ...DEFAULT_CONFIG.concurrency, ...raw.concurrency },
       ...(raw.reporting ? { reporting: raw.reporting } : {}),
       ...(raw.tasks ? { tasks: raw.tasks } : {}),
+      ...(raw.server ? {
+        server: {
+          port: 3851,
+          host: '127.0.0.1',
+          ingest_interval_minutes: 15,
+          pid_file: '~/.claude/anamnesis.pid',
+          ...raw.server,
+        },
+      } : {}),
     };
   } else {
     _config = DEFAULT_CONFIG;
@@ -174,6 +204,11 @@ export function getConfig(): AnamnesisConfig {
   // Resolve ~ in transcripts_root
   if (_config!.transcripts_root) {
     _config!.transcripts_root = resolveTilde(_config!.transcripts_root);
+  }
+
+  // Resolve ~ in server.pid_file
+  if (_config!.server?.pid_file) {
+    _config!.server.pid_file = resolveTilde(_config!.server.pid_file);
   }
 
   if (!_config!.transcripts_root) {

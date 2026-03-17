@@ -14,6 +14,7 @@ import type {
   SimilarSession,
   SessionMeta,
   SessionLink,
+  CompactSummary,
 } from '../types.js';
 
 /**
@@ -26,6 +27,7 @@ export interface Transaction {
   mergeSessionEmbedding(sessionId: string, newEmbeddings: number[][], existingCount: number): Promise<void>;
   deleteSessionData(sessionId: string): Promise<void>;
   upsertIngestedFile(path: string, size: number, mtime: Date, sessionId: string): Promise<void>;
+  insertCompactSummary(sessionId: string, summary: string, trigger?: string): Promise<void>;
 }
 
 /**
@@ -68,6 +70,10 @@ export interface StorageBackend {
   // Context builder
   getSessionMetaBatch(sessionIds: string[]): Promise<SessionMeta[]>;
   getLinksForSessions(sessionIds: string[]): Promise<SessionLink[]>;
+
+  // Compact summaries
+  getCompactSummaries(sessionId: string): Promise<CompactSummary[]>;
+  insertCompactSummary(sessionId: string, summary: string, trigger?: string): Promise<void>;
 
   // Stats
   getStats(): Promise<Stats>;

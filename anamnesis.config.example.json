@@ -54,6 +54,12 @@
       "blocked_label": "blocked"
     }
   },
+  "server": {
+    "port": 3851,
+    "host": "127.0.0.1",
+    "ingest_interval_minutes": 15,
+    "pid_file": "~/.claude/anamnesis.pid"
+  },
   "reporting": {
     "projects": [
       {

@@ -6,35 +6,41 @@
 
 ## Features
 
-- **Semantic search** — Find past sessions by meaning, not just keywords
-- **Hybrid search** — Combines vector similarity with full-text keyword search (RRF fusion)
-- **Smart context builder** — Token-budget-aware context assembly with deduplication, diversity re-ranking, and link graph traversal
-- **Incremental ingestion** — Only new turns are embedded when a session grows; existing turns are never re-processed
-- **Auto-linking** — Sessions are linked by shared files, semantic similarity, and topic overlap
-- **Topic extraction** — Auto-generated tags and summaries per session via local LLM
-- **Proactive recall** — Session-start hook injects relevant context automatically
-- **Compaction resilience** — PreCompact hook captures session state and triggers ingestion before context window compaction, so long sessions never lose their thread
-- **Daily reporting** — MCP tool + skill for cross-project daily/weekly/monthly reports
+- **Semantic search** - Find past sessions by meaning, not just keywords
+- **Hybrid search** - Combines vector similarity with full-text keyword search (RRF fusion)
+- **Smart context builder** - Token-budget-aware context assembly with deduplication, diversity re-ranking, and link graph traversal
+- **HTTP server** - Persistent background process that handles hooks, periodic ingestion, and compact summary storage. Zero new dependencies (uses `node:http`). Auto-started on first session.
+- **Periodic ingestion** - Background timer ingests new/changed transcripts every 15 minutes, catching sessions where hooks didn't fire
+- **Incremental ingestion** - Only new turns are embedded when a session grows; existing turns are never re-processed
+- **Auto-linking** - Sessions are linked by shared files, semantic similarity, and topic overlap
+- **Topic extraction** - Auto-generated tags and summaries per session via local LLM
+- **Proactive recall** - Session-start hook injects relevant context automatically
+- **Compaction resilience** - PreCompact and PostCompact hooks capture session state and trigger ingestion before/after context window compaction, so long sessions never lose their thread
+- **Daily reporting** - MCP tool + skill for cross-project daily/weekly/monthly reports
 
 ## How It Works
 
 ```
 Claude Code JSONL transcripts (~/.claude/projects/**/*.jsonl)
-  → ETL Pipeline (TypeScript) — parse, chunk, extract metadata
-  → Ollama bge-m3 — 1024-dim vector embeddings
-  → PostgreSQL + pgvector — semantic search + full-text search
-  → MCP Server (stdio) — 5 tools for search, browsing, ingestion, reporting
+  -> ETL Pipeline (TypeScript) - parse, chunk, extract metadata
+  -> Ollama bge-m3 - 1024-dim vector embeddings
+  -> PostgreSQL + pgvector - semantic search + full-text search
+  -> MCP Server (stdio) - 5 tools for search, browsing, ingestion, reporting
+  -> HTTP Server (persistent) - hook handlers, periodic ingest, compact summaries
 ```
 
 Each conversation turn (user message + assistant response) becomes a searchable unit with its own embedding. Sessions are enriched with metadata (project, files touched, tools used, timestamps) and linked to related sessions.
+
+The **MCP server** runs per-session via stdio (ephemeral). The **HTTP server** runs persistently in the background, handling all hook logic and periodic ingestion. Both share the same codebase and storage layer.
 
 ## Prerequisites
 
 - **Node.js** 18+
 - **PostgreSQL** with [pgvector](https://github.com/pgvector/pgvector) extension
+- **Python 3** (for hook shim)
 - **Ollama** with models:
-  - `bge-m3` — embeddings (required)
-  - `gemma3:12b` — topic extraction (optional, needs ~8 GB VRAM; `gemma3:4b` works with ~4 GB)
+  - `bge-m3` - embeddings (required)
+  - `gemma3:12b` - topic extraction (optional, needs ~8 GB VRAM; `gemma3:4b` works with ~4 GB)
 
 ## Quick Start
 
@@ -49,14 +55,14 @@ psql -d anamnesis -f src/db/schema.sql
 ollama pull bge-m3
 
 cp anamnesis.config.example.json anamnesis.config.json
-# Edit anamnesis.config.json — set database.user to your PostgreSQL username
+# Edit anamnesis.config.json - set database.user to your PostgreSQL username
 
 npm run build
 node dist/index.js backfill
 node dist/index.js stats
 ```
 
-This gets you a working database. For the full walkthrough — including MCP registration, hooks, topic extraction, HNSW indexes, troubleshooting, and Claude Code integration — see **[INSTALL.md](INSTALL.md)**.
+This gets you a working database. For the full walkthrough - including MCP registration, hooks, HTTP server, topic extraction, HNSW indexes, troubleshooting, and Claude Code integration - see **[INSTALL.md](INSTALL.md)**.
 
 Or let Claude guide you: open the project in Claude Code and type **`/anamnesis_install`**.
 
@@ -67,23 +73,57 @@ Create `anamnesis.config.json` from the example file. All settings can also be o
 | Field | Default | Env Override | Description |
 |-------|---------|-------------|-------------|
 | `transcripts_root` | (required) | `ANAMNESIS_TRANSCRIPTS_ROOT` | Path to Claude Code transcripts (e.g., `~/.claude/projects`) |
-| `search_mode` | `hybrid` | — | Default search: `hybrid` or `vector` |
+| `search_mode` | `hybrid` | - | Default search: `hybrid` or `vector` |
 | `database.host` | `localhost` | `ANAMNESIS_DB_HOST` | PostgreSQL host |
 | `database.port` | `5432` | `ANAMNESIS_DB_PORT` | PostgreSQL port |
 | `database.database` | `anamnesis` | `ANAMNESIS_DB_NAME` | Database name |
 | `database.user` | `anamnesis` | `ANAMNESIS_DB_USER` | Database user |
 | `database.password` | (empty) | `ANAMNESIS_DB_PASSWORD` | Database password (omit for trust/peer auth) |
 | `ollama.url` | `http://localhost:11434` | `ANAMNESIS_OLLAMA_URL` | Ollama server URL |
-| `ollama.model` | `bge-m3` | — | Embedding model |
-| `topic_model.model` | `gemma3:12b` | — | Topic extraction model (use `gemma3:4b` for lower VRAM) |
-| `exclude_projects` | `[]` | — | Project directory names to skip |
-| `exclude_sessions` | `[]` | — | Specific session UUIDs to skip |
-| `concurrency.embedding` | `4` | — | Parallel embedding requests |
-| `concurrency.topics` | `2` | — | Parallel topic extraction requests |
+| `ollama.model` | `bge-m3` | - | Embedding model |
+| `topic_model.model` | `gemma3:12b` | - | Topic extraction model (use `gemma3:4b` for lower VRAM) |
+| `server.port` | `3851` | `ANAMNESIS_SERVER_PORT` | HTTP server port |
+| `server.host` | `127.0.0.1` | `ANAMNESIS_SERVER_HOST` | HTTP server bind address |
+| `server.ingest_interval_minutes` | `15` | - | Periodic ingestion interval |
+| `server.pid_file` | `~/.claude/anamnesis.pid` | - | PID file location |
+| `exclude_projects` | `[]` | - | Project directory names to skip |
+| `exclude_sessions` | `[]` | - | Specific session UUIDs to skip |
+| `concurrency.embedding` | `4` | - | Parallel embedding requests |
+| `concurrency.topics` | `2` | - | Parallel topic extraction requests |
 
-Tilde (`~`) in `transcripts_root` is resolved to the user's home directory.
+Tilde (`~`) in paths is resolved to the user's home directory.
 
 **Priority:** Environment variables > `anamnesis.config.json` > defaults.
+
+**Note:** The `server` section is optional. If omitted, the HTTP server uses defaults (port 3851, localhost). If you don't want the HTTP server at all, simply don't install the hook shim.
+
+## HTTP Server
+
+The HTTP server is a persistent background process that centralizes all hook logic and runs periodic ingestion. It starts automatically when you begin your first Claude Code session (the hook shim auto-starts it) and stays running between sessions.
+
+**Why a server?** Before v1.3, each hook was a standalone Python script with its own database connection and embedding logic (~700 lines across 3 files). The server consolidates this into shared code, adds periodic background ingestion (critical now that 1M context means compaction is rare), and enables new capabilities like compact summary storage.
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/health` | GET | Health check + uptime + version + PID |
+| `/stats` | GET | DB stats + timer status |
+| `/hooks/session-start` | POST | Recent sessions + task focus -> systemMessage |
+| `/hooks/session-end` | POST | Trigger ingestion of session |
+| `/hooks/pre-compact` | POST | Extract state, trigger ingest, return continuation |
+| `/hooks/post-compact` | POST | Store compact_summary, trigger ingest |
+| `/hooks/plan-recall` | POST | Embed query -> semantic search -> additionalContext |
+| `/ingest` | POST | On-demand ingestion trigger |
+
+```bash
+# Manual start (normally auto-started by hooks)
+npm run server
+
+# Check health
+curl http://127.0.0.1:3851/health
+
+# View stats
+curl http://127.0.0.1:3851/stats
+```
 
 ## MCP Tools
 
@@ -144,6 +184,7 @@ Requires the `reporting` section in config. See `anamnesis.config.example.json`.
 
 | Command | Description |
 |---------|-------------|
+| `npm run server` | Start the HTTP server (normally auto-started by hooks) |
 | `node dist/index.js ingest-session [id]` | Ingest a session (used by SessionEnd hook) |
 | `node dist/index.js ingest <file>` | Ingest a single JSONL transcript |
 | `node dist/index.js ingest-all` | Discover and ingest all new/changed transcripts |
@@ -171,16 +212,19 @@ Add to `~/.claude.json` under `mcpServers`:
 
 ## Hooks
 
-Example hooks are provided in the `hooks/` directory:
+All hooks route through a single Python shim (`hooks/anamnesis-shim.py`) that POSTs to the HTTP server. The server handles all the logic. This replaces the previous approach of standalone Python scripts with separate database connections.
 
-| Hook | Trigger | Purpose |
-|------|---------|---------|
-| `session-end.json` | SessionEnd | Auto-ingest transcripts when a session ends |
-| `session-start-recall.py` | SessionStart | Inject recent project context at session start |
-| `plan-recall.py` | PreToolUse (EnterPlanMode) | Search Anamnesis when entering plan mode |
-| `pre-compact-ingest.py` | PreCompact | Capture state + ingest transcript before context compaction |
+| Hook | Trigger | Endpoint | Purpose |
+|------|---------|----------|---------|
+| SessionStart | Session begins | `/hooks/session-start` | Inject recent project context, task focus |
+| SessionEnd | Session ends | `/hooks/session-end` | Ingest transcript |
+| PreCompact | Before context compaction | `/hooks/pre-compact` | Capture state, trigger ingest, inject continuation |
+| PostCompact | After context compaction | `/hooks/post-compact` | Store compact summary in DB |
+| PlanRecall | EnterPlanMode (PreToolUse) | `/hooks/plan-recall` | Search past sessions, inject as planning context |
 
 See [`hooks/README.md`](hooks/README.md) for installation instructions.
+
+**Upgrading from v1.2:** If you have the old standalone hooks installed, replace them with the shim. See INSTALL.md Step 6 for the new configuration.
 
 ## Skills
 
@@ -188,7 +232,7 @@ Claude Code skills for higher-level workflows are in the `skills/` directory:
 
 | Skill | Description |
 |-------|-------------|
-| `/anamnesis_install` | Guided setup and health check — walks through installation or verifies system health |
+| `/anamnesis_install` | Guided setup and health check - walks through installation or verifies system health |
 | `/daily_duties` | Generate per-project daily logs, cross-project reports, weekly retros, and monthly highlights |
 
 See [`skills/README.md`](skills/README.md) for installation instructions.
@@ -197,9 +241,9 @@ See [`skills/README.md`](skills/README.md) for installation instructions.
 
 Anamnesis offers two search modes:
 
-**Vector search** — Embeds your query with bge-m3 and finds the most similar conversation turns by cosine distance. Good for conceptual/semantic queries.
+**Vector search** - Embeds your query with bge-m3 and finds the most similar conversation turns by cosine distance. Good for conceptual/semantic queries.
 
-**Hybrid search** (default) — Combines vector similarity with PostgreSQL full-text search using Reciprocal Rank Fusion (RRF). Includes a recency boost. Better for queries mixing concepts with specific terms.
+**Hybrid search** (default) - Combines vector similarity with PostgreSQL full-text search using Reciprocal Rank Fusion (RRF). Includes a recency boost. Better for queries mixing concepts with specific terms.
 
 Both modes enforce a minimum similarity threshold (0.3) to filter noise.
 
@@ -207,14 +251,14 @@ Both modes enforce a minimum similarity threshold (0.3) to filter noise.
 
 When `anamnesis_search` receives a `budget` parameter, it switches from top-N retrieval to a three-phase context assembly pipeline:
 
-1. **Gather** — Overfetch 20 results, deduplicate by session (keeping related turns as drill-down hints), apply MMR diversity re-ranking, traverse the session link graph for top hits
-2. **Allocate** — Greedily assign detail levels (full/summary/title) based on remaining token budget
-3. **Render** — Format progressive-detail markdown with "See also" turns and "Linked" session hints
+1. **Gather** - Overfetch 20 results, deduplicate by session (keeping related turns as drill-down hints), apply MMR diversity re-ranking, traverse the session link graph for top hits
+2. **Allocate** - Greedily assign detail levels (full/summary/title) based on remaining token budget
+3. **Render** - Format progressive-detail markdown with "See also" turns and "Linked" session hints
 
 This produces richer, more diverse results than simple top-N search, especially as the database grows. Typical budgets:
-- **800** — Hooks and quick context (5-7 sessions, concise)
-- **2000** — Planning and moderate context
-- **4000** — Deep research with linked sessions
+- **800** - Hooks and quick context (5-7 sessions, concise)
+- **2000** - Planning and moderate context
+- **4000** - Deep research with linked sessions
 
 Also available via CLI: `node dist/index.js context "query" --budget 2000`
 
@@ -222,18 +266,19 @@ Also available via CLI: `node dist/index.js context "query" --budget 2000`
 
 | Table | Purpose |
 |-------|---------|
-| `anamnesis_sessions` | One row per session/subagent. Metadata, tags, summary, session embedding. |
+| `anamnesis_sessions` | One row per session/subagent. Metadata, tags, summary, session embedding, agent ID/type. |
 | `anamnesis_turns` | One row per user+assistant pair. Content, tool calls, embedding, tsvector. |
 | `anamnesis_ingested_files` | Idempotency tracking (file path, size, mtime). |
 | `anamnesis_session_links` | Auto-links between sessions (file_overlap, semantic, topic). |
+| `anamnesis_compact_summaries` | Compact summaries stored by PostCompact hook. One session can compact multiple times. |
 
 ## Auto-Linking
 
 Three layers of automatic session linking:
 
-1. **File overlap** — Sessions sharing `files_touched` entries. Score = Jaccard similarity.
-2. **Semantic similarity** — Compare averaged session embeddings. Links top 5 above 0.5 threshold.
-3. **Topic overlap** — Sessions sharing 2+ extracted tags. Score = Jaccard similarity.
+1. **File overlap** - Sessions sharing `files_touched` entries. Score = Jaccard similarity.
+2. **Semantic similarity** - Compare averaged session embeddings. Links top 5 above 0.5 threshold.
+3. **Topic overlap** - Sessions sharing 2+ extracted tags. Score = Jaccard similarity.
 
 Related sessions surface in `anamnesis_session` results.
 
@@ -254,23 +299,15 @@ Configure the `reporting` section in `anamnesis.config.json` with your projects.
 | `filesystem` | `tasks.filesystem` | None | Simple TODO files |
 | `nudge` | `tasks.nudge` | PostgreSQL + Nudge | [Nudge](https://github.com/MiccoHadje/Nudge) users |
 
-## Scheduled Ingestion (Windows)
-
-For Windows users, `scripts/setup-scheduled-task.ps1` creates a Windows Scheduled Task that runs `ingest-all` every 15 minutes. This catches sessions where the SessionEnd hook didn't fire.
-
-```powershell
-# Run as Administrator
-powershell -ExecutionPolicy Bypass -File scripts/setup-scheduled-task.ps1
-```
-
 ## Development
 
 ```bash
-npm run build    # TypeScript → dist/
-npm run dev      # Run with tsx (no build step)
-npm test         # Run tests
+npm run build       # TypeScript -> dist/
+npm run dev         # Run CLI with tsx (no build step)
+npm run server:dev  # Run HTTP server with tsx (no build step)
+npm test            # Run tests
 ```
 
 ## License
 
-[GPL-3.0](LICENSE) — Copyright 2026 Clay Mahaffey / Canoic LLC
+[GPL-3.0](LICENSE) - Copyright 2026 Clay Mahaffey / Canoic LLC

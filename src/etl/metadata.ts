@@ -14,6 +14,8 @@ export interface SessionMetadata {
   toolsUsed: string[];
   isSubagent: boolean;
   parentSessionId?: string;
+  agentId?: string;
+  agentType?: string;
 }
 
 /**
@@ -32,6 +34,8 @@ export function extractSessionMetadata(
   let model: string | undefined;
   let startedAt: Date | undefined;
   let endedAt: Date | undefined;
+  let agentId: string | undefined;
+  let agentType: string | undefined;
 
   // Get session info from first relevant message
   for (const msg of allMessages) {
@@ -46,6 +50,14 @@ export function extractSessionMetadata(
     }
     if (msg.type === 'assistant' && msg.message?.model && !model) {
       model = msg.message.model;
+    }
+    // Extract agent_id and agent_type from hook payloads
+    const raw = msg as unknown as Record<string, unknown>;
+    if (raw.agent_id && !agentId) {
+      agentId = String(raw.agent_id);
+    }
+    if (raw.agent_type && !agentType) {
+      agentType = String(raw.agent_type);
     }
     if (msg.timestamp) {
       const ts = new Date(msg.timestamp);
@@ -84,6 +96,8 @@ export function extractSessionMetadata(
     toolsUsed: [...toolsSet],
     isSubagent,
     parentSessionId,
+    agentId,
+    agentType,
   };
 }
 

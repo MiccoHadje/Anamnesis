@@ -54,8 +54,26 @@ CREATE TABLE IF NOT EXISTS anamnesis_turns (
   ) STORED
 );
 
+-- Agent metadata for sessions
+ALTER TABLE anamnesis_sessions ADD COLUMN IF NOT EXISTS agent_id TEXT;
+ALTER TABLE anamnesis_sessions ADD COLUMN IF NOT EXISTS agent_type TEXT;
+
+-- Compact summaries (one session can compact multiple times)
+CREATE TABLE IF NOT EXISTS anamnesis_compact_summaries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id TEXT NOT NULL REFERENCES anamnesis_sessions(session_id) ON DELETE CASCADE,
+  compact_summary TEXT NOT NULL,
+  trigger TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_compact_session ON anamnesis_compact_summaries(session_id);
+
 -- Auto-linking between sessions
-CREATE TYPE link_type AS ENUM ('file_overlap', 'semantic', 'topic');
+DO $$ BEGIN
+  CREATE TYPE link_type AS ENUM ('file_overlap', 'semantic', 'topic');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 CREATE TABLE IF NOT EXISTS anamnesis_session_links (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

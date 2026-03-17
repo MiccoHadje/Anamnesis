@@ -4,12 +4,13 @@ Step-by-step instructions to go from zero to a working Anamnesis installation. T
 
 ## Overview
 
-You'll set up four components:
+You'll set up five components:
 
-1. **PostgreSQL + pgvector** — stores sessions, turns, embeddings, and search indexes
-2. **Ollama** — runs the embedding model locally (no API keys needed)
-3. **Anamnesis** — the ETL pipeline + MCP server
-4. **Claude Code integration** — MCP server registration + hooks
+1. **PostgreSQL + pgvector** - stores sessions, turns, embeddings, and search indexes
+2. **Ollama** - runs the embedding model locally (no API keys needed)
+3. **Anamnesis** - the ETL pipeline + MCP server + HTTP server
+4. **Claude Code integration** - MCP server registration + hooks
+5. **HTTP server** - persistent background process for hooks and periodic ingestion (auto-started)
 
 Total time: ~30 minutes for setup, plus backfill time (varies with transcript volume).
 
@@ -119,7 +120,7 @@ If that fails, pgvector isn't installed — go back to Step 1.
 psql -d anamnesis -c "\dt anamnesis_*"
 ```
 
-You should see four tables: `anamnesis_sessions`, `anamnesis_turns`, `anamnesis_ingested_files`, `anamnesis_session_links`.
+You should see five tables: `anamnesis_sessions`, `anamnesis_turns`, `anamnesis_ingested_files`, `anamnesis_session_links`, `anamnesis_compact_summaries`.
 
 > **Note for Claude:** The default config expects database user `anamnesis`. If the user wants to use their own PostgreSQL role instead (common on personal machines with trust auth), they should use their OS username and update `database.user` in the config (Step 3). No need to create a separate `anamnesis` role unless they prefer it.
 
@@ -295,147 +296,152 @@ Should return relevant results.
 
 ## Step 6: Hooks (Optional but Recommended)
 
-Hooks automate ingestion and add proactive recall. Install any combination — they're independent.
+Hooks automate ingestion and add proactive recall. In v1.3+, all hooks route through a single Python shim that communicates with the Anamnesis HTTP server. The server handles all the logic (database queries, embeddings, ingestion) and is auto-started on your first session.
 
-### Prerequisites for Python hooks
+### How it works
 
-```bash
-pip install psycopg2-binary
+```
+Claude Code hook event
+  -> anamnesis-shim.py (reads stdin, POSTs to server)
+  -> Anamnesis HTTP server (port 3851)
+  -> response (JSON printed to stdout)
 ```
 
-### SessionEnd — Auto-ingest after each session
+The shim is ~50 lines of Python with no dependencies beyond the standard library. If the HTTP server isn't running, the SessionStart hook auto-starts it. All other hooks gracefully degrade (exit 0) if the server is unreachable.
 
-This is the most important hook. It ingests the transcript immediately when you finish a session, keeping the database current.
+### Install all hooks
 
-**Install:** Copy `hooks/session-end.json` content into `~/.claude/settings.json`:
+Add to `~/.claude/settings.json`. Replace `/path/to/Anamnesis` with your actual installation path:
 
 ```json
 {
   "hooks": {
-    "SessionEnd": [
-      {
-        "type": "command",
-        "command": "node /absolute/path/to/Anamnesis/dist/index.js ingest-session $SESSION_ID",
-        "timeout": 30000
-      }
-    ]
-  }
-}
-```
-
-Replace the path with your actual Anamnesis install path.
-
-> **Note for Claude:** `~/.claude/settings.json` may already have hook entries. Merge into the existing structure — don't overwrite. The `$SESSION_ID` is provided by Claude Code at runtime. On Windows, the path should use forward slashes in the JSON.
-
-### SessionStart — Proactive recall (Python)
-
-Injects recent project context when you start a session. Claude gets immediate awareness of what you were working on.
-
-1. Copy `hooks/session-start-recall.py` to `~/.claude/hooks/anamnesis-recall.py`
-2. Add to `~/.claude/settings.json` under `hooks.SessionStart`:
-
-```json
-{
-  "type": "command",
-  "command": "python ~/.claude/hooks/anamnesis-recall.py",
-  "timeout": 10000
-}
-```
-
-### PreToolUse — Plan-mode recall (Python)
-
-Searches Anamnesis when Claude enters plan mode, injecting relevant historical context.
-
-1. Copy `hooks/plan-recall.py` to `~/.claude/hooks/plan-recall.py`
-2. Add to `~/.claude/settings.json` under `hooks.PreToolUse`:
-
-```json
-{
-  "type": "command",
-  "command": "python ~/.claude/hooks/plan-recall.py",
-  "timeout": 10000,
-  "matcher": { "tool_name": "EnterPlanMode" }
-}
-```
-
-### PreCompact — State capture + mid-session ingestion (Python)
-
-Captures session state and triggers Anamnesis ingestion before context compaction. This is the bridge between compaction and memory — without it, pre-compaction context isn't in Anamnesis until SessionEnd.
-
-1. Copy `hooks/pre-compact-ingest.py` to `~/.claude/hooks/pre-compact-ingest.py`
-2. Edit `ANAMNESIS_DIR` at the top of the copied file to point to your Anamnesis installation
-3. Add to `~/.claude/settings.json` under `hooks.PreCompact`:
-
-```json
-{
-  "type": "command",
-  "command": "python ~/.claude/hooks/pre-compact-ingest.py",
-  "timeout": 10000
-}
-```
-
-> **Note for Claude:** The `ANAMNESIS_DIR` constant in the script must be set to the absolute path of the Anamnesis installation (e.g., `D:/Projects/Anamnesis` or `/home/user/Anamnesis`). Use forward slashes even on Windows.
-
-### Merging hooks into settings.json
-
-If you're installing multiple hooks, your `~/.claude/settings.json` should look like:
-
-```json
-{
-  "hooks": {
-    "SessionEnd": [
-      {
-        "type": "command",
-        "command": "node /path/to/Anamnesis/dist/index.js ingest-session $SESSION_ID",
-        "timeout": 30000
-      }
-    ],
     "SessionStart": [
       {
-        "type": "command",
-        "command": "python ~/.claude/hooks/anamnesis-recall.py",
-        "timeout": 10000
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python /path/to/Anamnesis/hooks/anamnesis-shim.py /hooks/session-start",
+            "timeout": 15000,
+            "statusMessage": "Recalling past sessions..."
+          }
+        ]
       }
     ],
-    "PreToolUse": [
+    "SessionEnd": [
       {
-        "type": "command",
-        "command": "python ~/.claude/hooks/plan-recall.py",
-        "timeout": 10000,
-        "matcher": { "tool_name": "EnterPlanMode" }
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python /path/to/Anamnesis/hooks/anamnesis-shim.py /hooks/session-end",
+            "timeout": 30000,
+            "statusMessage": "Saving to Anamnesis..."
+          }
+        ]
       }
     ],
     "PreCompact": [
       {
-        "type": "command",
-        "command": "python ~/.claude/hooks/pre-compact-ingest.py",
-        "timeout": 10000
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python /path/to/Anamnesis/hooks/anamnesis-shim.py /hooks/pre-compact",
+            "timeout": 15000,
+            "statusMessage": "Capturing state + ingesting to Anamnesis..."
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python /path/to/Anamnesis/hooks/anamnesis-shim.py /hooks/post-compact",
+            "timeout": 15000,
+            "statusMessage": "Storing compact summary..."
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "EnterPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python /path/to/Anamnesis/hooks/anamnesis-shim.py /hooks/plan-recall",
+            "timeout": 15000,
+            "statusMessage": "Searching past sessions..."
+          }
+        ]
       }
     ]
   }
 }
 ```
 
-> **Note for Claude:** If the user already has hooks in their settings.json, append to the existing arrays — don't replace them. Each hook type is an array, so multiple hooks can coexist.
+You can install any subset of these hooks. They're independent. At minimum, install **SessionEnd** (keeps the database current) and **SessionStart** (proactive recall).
+
+### What each hook does
+
+| Hook | When | What |
+|------|------|------|
+| **SessionStart** | Session begins | Queries recent sessions for the current project, shows them in the status bar, injects context. If the server isn't running, auto-starts it. |
+| **SessionEnd** | Session ends | Triggers ingestion of the session transcript. |
+| **PreCompact** | Before context compaction | Reads the transcript tail to extract working state (files, commands, errors), triggers background ingestion, injects a continuation prompt so post-compaction Claude has context. |
+| **PostCompact** | After context compaction | Stores the compact summary in the database (one session can compact multiple times). Triggers background ingestion. |
+| **PlanRecall** | Entering plan mode | Embeds the user's planning query (or falls back to task focus), searches Anamnesis, injects relevant past sessions as additional planning context. |
+
+### Upgrading from v1.2
+
+If you have the old standalone hooks (`anamnesis-recall.py`, `pre-compact-ingest.py`, `plan-recall.py`, `node dist/index.js ingest-session`), replace them with the shim entries above. The old Python hooks in `~/.claude/hooks/` can be removed once you've verified the new setup works.
+
+> **Note for Claude:** If the user already has hooks in their settings.json (e.g., for other tools), merge these entries. Each hook type is an array, so multiple hooks can coexist. Use the nested `hooks` array format shown above.
 
 ---
 
-## Step 7: Scheduled Ingestion (Optional, Windows)
+## Step 7: HTTP Server and Periodic Ingestion
 
-If you want a safety net that catches sessions where the SessionEnd hook didn't fire:
+The HTTP server starts automatically when the SessionStart hook fires. It stays running between sessions and periodically ingests new/changed transcripts (every 15 minutes by default). This replaces the need for a separate scheduled task or cron job.
+
+**Verify it's running:**
+```bash
+curl http://127.0.0.1:3851/health
+```
+
+If you want to start it manually (e.g., for ingestion between sessions):
+```bash
+npm run server
+```
+
+**Configuration** (in `anamnesis.config.json`):
+```json
+{
+  "server": {
+    "port": 3851,
+    "host": "127.0.0.1",
+    "ingest_interval_minutes": 15,
+    "pid_file": "~/.claude/anamnesis.pid"
+  }
+}
+```
+
+The `server` section is optional. If omitted, defaults are used. The server logs to `server.log` in the Anamnesis directory when auto-started by the shim.
+
+**Legacy: Windows Scheduled Task / cron job.** If you still want a separate scheduled ingestion as a fallback (e.g., if you don't use the hook shim), the old approach still works:
 
 ```powershell
-# Run in an Administrator PowerShell
+# Windows (run as Administrator)
 powershell -ExecutionPolicy Bypass -File scripts/setup-scheduled-task.ps1
 ```
 
-This creates a Windows Scheduled Task that runs `ingest-all` every 15 minutes in the background (no visible console window).
-
-For macOS/Linux, use a cron job:
 ```bash
-# crontab -e
+# macOS/Linux (crontab -e)
 */15 * * * * cd /path/to/Anamnesis && node dist/index.js ingest-all >> /tmp/anamnesis-ingest.log 2>&1
 ```
+
+However, the HTTP server's built-in timer is preferred since it shares the same process and database connection pool.
 
 ---
 
@@ -525,7 +531,8 @@ If Ollama is slow, your machine may be under memory pressure. The bge-m3 model n
 
 Once Anamnesis is running, you'll accumulate session memory over time. Here are some optional enhancements:
 
-- **Daily reporting** — Add the `reporting` section to your config and install the `/daily_duties` skill from `skills/`. See `skills/README.md`.
-- **Task integration** — Add the `tasks` section to your config to enrich reports with task completion data. GitHub Issues (`gh` CLI) is the recommended default; filesystem and [Nudge](https://github.com/MiccoHadje/Nudge) adapters are also available.
-- **Topic extraction** — Run `backfill-topics` periodically to generate tags and summaries. This improves search and enables topic-based session linking.
-- **Tune concurrency** — If you have a powerful machine, increase `concurrency.embedding` (default 4) for faster backfills.
+- **Daily reporting** - Add the `reporting` section to your config and install the `/daily_duties` skill from `skills/`. See `skills/README.md`.
+- **Task integration** - Add the `tasks` section to your config to enrich reports with task completion data. GitHub Issues (`gh` CLI) is the recommended default; filesystem and [Nudge](https://github.com/MiccoHadje/Nudge) adapters are also available.
+- **Topic extraction** - Run `backfill-topics` periodically to generate tags and summaries. This improves search and enables topic-based session linking.
+- **Tune concurrency** - If you have a powerful machine, increase `concurrency.embedding` (default 4) for faster backfills.
+- **Server tuning** - Adjust `server.ingest_interval_minutes` if you want more or less frequent background ingestion. Lower values keep the database more current but use more resources.

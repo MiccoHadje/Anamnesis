@@ -92,6 +92,8 @@ export async function ingestFile(
         tools_used: meta.toolsUsed,
         is_subagent: meta.isSubagent,
         parent_session_id: meta.parentSessionId,
+        agent_id: meta.agentId,
+        agent_type: meta.agentType,
       });
 
       // Insert only new turns
@@ -187,6 +189,8 @@ export async function ingestFile(
       tools_used: meta.toolsUsed,
       is_subagent: meta.isSubagent,
       parent_session_id: meta.parentSessionId,
+      agent_id: meta.agentId,
+      agent_type: meta.agentType,
     });
 
     // Set session embedding

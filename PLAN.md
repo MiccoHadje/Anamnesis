@@ -1,6 +1,6 @@
 # Anamnesis Implementation Plan
 
-> **Historical document.** This plan was written during initial development and is preserved for reference. The project is now at v1.0.0 with all phases complete.
+> **Historical document.** This plan was written during initial development and updated as the project evolved. The project is now at v1.3.0.
 
 ## Context
 
@@ -62,7 +62,7 @@ Anamnesis/
 
 ## Database Schema
 
-Four tables:
+Five tables:
 
 1. **`anamnesis_ingested_files`** — Idempotency tracking. Stores `(file_path, file_size, file_mtime)` for each processed JSONL.
 
@@ -70,7 +70,9 @@ Four tables:
 
 3. **`anamnesis_turns`** — One row per user+assistant pair. Fields: `session_id`, `turn_index`, `user_content`, `assistant_content`, `tool_calls JSONB`, `files_in_turn[]`, `timestamp_start/end`, `token_count`, `embedding_text`, `embedding vector(1024)`.
 
-4. **`anamnesis_session_links`** — Auto-linking. Fields: `session_a`, `session_b`, `link_type` (enum: `file_overlap`, `semantic`, `topic`), `score FLOAT`, `shared_detail TEXT`.
+4. **`anamnesis_session_links`** - Auto-linking. Fields: `session_a`, `session_b`, `link_type` (enum: `file_overlap`, `semantic`, `topic`), `score FLOAT`, `shared_detail TEXT`.
+
+5. **`anamnesis_compact_summaries`** - Compact summaries from PostCompact hook. Fields: `session_id`, `compact_summary`, `trigger`, `created_at`. One session can compact multiple times (one-to-many).
 
 ## ETL Pipeline
 
@@ -110,6 +112,9 @@ Search quality improvements, hybrid search, topic extraction, documentation.
 
 ### Phase 9: Public Release ✅
 Private info scrubbed, config externalized with env var overrides, GPL v3 license, example hooks/skills, daily reporting MCP tool, README rewrite.
+
+### Phase 10: HTTP Server + Hook Consolidation ✅
+Persistent HTTP server (`node:http`, zero new deps) on port 3851. Replaces 3 standalone Python hooks (~700 lines) with a single shim (~50 lines) that POSTs to the server. New: periodic background ingestion (15 min timer), PostCompact hook with compact summary storage, agent_id/agent_type metadata, auto-start on first session.
 
 ## Key Dependencies
 

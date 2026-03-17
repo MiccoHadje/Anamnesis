@@ -16,6 +16,7 @@ import type {
   SimilarSession,
   SessionMeta,
   SessionLink,
+  CompactSummary,
 } from '../types.js';
 import { getPool } from '../db/client.js';
 
@@ -35,12 +36,13 @@ class PgTransaction implements Transaction {
     await this.client.query(
       `INSERT INTO anamnesis_sessions
          (session_id, project_name, cwd, git_branch, model, started_at, ended_at,
-          turn_count, files_touched, tools_used, is_subagent, parent_session_id, metadata)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+          turn_count, files_touched, tools_used, is_subagent, parent_session_id,
+          agent_id, agent_type, metadata)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
        ON CONFLICT (session_id) DO UPDATE SET
          project_name=$2, cwd=$3, git_branch=$4, model=$5, started_at=$6, ended_at=$7,
          turn_count=$8, files_touched=$9, tools_used=$10, is_subagent=$11,
-         parent_session_id=$12, metadata=$13`,
+         parent_session_id=$12, agent_id=$13, agent_type=$14, metadata=$15`,
       [
         session.session_id,
         session.project_name || null,
@@ -54,6 +56,8 @@ class PgTransaction implements Transaction {
         session.tools_used,
         session.is_subagent,
         session.parent_session_id || null,
+        session.agent_id || null,
+        session.agent_type || null,
         JSON.stringify(session.metadata || {}),
       ]
     );
@@ -136,6 +140,14 @@ class PgTransaction implements Transaction {
        ON CONFLICT (file_path) DO UPDATE SET
          file_size = $2, file_mtime = $3, session_id = $4, ingested_at = NOW()`,
       [path, size, mtime, sessionId]
+    );
+  }
+
+  async insertCompactSummary(sessionId: string, summary: string, trigger?: string): Promise<void> {
+    await this.client.query(
+      `INSERT INTO anamnesis_compact_summaries (session_id, compact_summary, trigger)
+       VALUES ($1, $2, $3)`,
+      [sessionId, summary, trigger || null]
     );
   }
 }
@@ -528,6 +540,27 @@ export class PgStorage implements StorageBackend {
       [sessionIds]
     );
     return rows;
+  }
+
+  // --- Compact summaries ---
+
+  async getCompactSummaries(sessionId: string): Promise<CompactSummary[]> {
+    const { rows } = await this.pool.query(
+      `SELECT id, session_id, compact_summary, trigger, created_at
+       FROM anamnesis_compact_summaries
+       WHERE session_id = $1
+       ORDER BY created_at DESC`,
+      [sessionId]
+    );
+    return rows;
+  }
+
+  async insertCompactSummary(sessionId: string, summary: string, trigger?: string): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO anamnesis_compact_summaries (session_id, compact_summary, trigger)
+       VALUES ($1, $2, $3)`,
+      [sessionId, summary, trigger || null]
+    );
   }
 
   // --- Stats ---

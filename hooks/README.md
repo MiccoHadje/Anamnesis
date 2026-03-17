@@ -2,107 +2,152 @@
 
 Claude Code hooks that integrate Anamnesis into your workflow. These are optional but recommended for the best experience.
 
-## Prerequisites
+## Architecture (v1.3+)
 
-```bash
-pip install psycopg2-binary
+All hooks route through a single Python shim (`anamnesis-shim.py`) that communicates with the Anamnesis HTTP server. The server handles all logic (database queries, embeddings, ingestion). This replaced the previous approach of standalone Python scripts with separate database connections.
+
+```
+Claude Code hook event
+  -> anamnesis-shim.py (reads stdin JSON, POSTs to HTTP server)
+  -> Anamnesis HTTP server (port 3851)
+  -> response JSON (printed to stdout for Claude Code)
 ```
 
-## Hooks
+The shim has **no dependencies** beyond the Python standard library. If the server isn't running, the SessionStart hook auto-starts it. All other hooks exit gracefully if the server is unreachable.
 
-### session-end.json — Auto-ingest on session end
+## Prerequisites
 
-Automatically ingests the session transcript when a Claude Code session ends.
+- **Python 3** (standard library only, no pip packages needed)
+- **Node.js 18+** (for the HTTP server)
+- Anamnesis built (`npm run build`)
 
-**Install:** Add the contents of `session-end.json` to your `~/.claude/settings.json` under `hooks.SessionEnd`. Update the path to point to your Anamnesis installation.
+## Installation
 
-### session-start-recall.py — Proactive context at session start
+Add to `~/.claude/settings.json`. Replace `/path/to/Anamnesis` with your actual path (use forward slashes, even on Windows):
 
-When you start a new Claude Code session, this hook queries Anamnesis for recent sessions on the same project and injects them into Claude's context. This gives Claude immediate awareness of your recent work.
-
-**Install:**
-1. Copy to `~/.claude/hooks/anamnesis-recall.py`
-2. Add to `~/.claude/settings.json`:
 ```json
 {
   "hooks": {
     "SessionStart": [
       {
-        "type": "command",
-        "command": "python ~/.claude/hooks/anamnesis-recall.py",
-        "timeout": 10000
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python /path/to/Anamnesis/hooks/anamnesis-shim.py /hooks/session-start",
+            "timeout": 15000,
+            "statusMessage": "Recalling past sessions..."
+          }
+        ]
       }
-    ]
-  }
-}
-```
-
-### plan-recall.py — Context-aware planning
-
-When Claude enters plan mode, this hook searches Anamnesis using the user's planning query and injects relevant past sessions as context. This means planning always starts with historical awareness.
-
-**Install:**
-1. Copy to `~/.claude/hooks/plan-recall.py`
-2. Add to `~/.claude/settings.json`:
-```json
-{
-  "hooks": {
-    "PreToolUse": [
+    ],
+    "SessionEnd": [
       {
-        "type": "command",
-        "command": "python ~/.claude/hooks/plan-recall.py",
-        "timeout": 10000,
-        "matcher": { "tool_name": "EnterPlanMode" }
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python /path/to/Anamnesis/hooks/anamnesis-shim.py /hooks/session-end",
+            "timeout": 30000,
+            "statusMessage": "Saving to Anamnesis..."
+          }
+        ]
       }
-    ]
-  }
-}
-```
-
-### pre-compact-ingest.py — State capture + ingestion before compaction
-
-When Claude Code's context window fills and compaction occurs, this hook:
-1. Reads the tail of the transcript to extract key state (files modified, recent commands, errors)
-2. Triggers Anamnesis ingestion of the current session in the background (non-blocking)
-3. Injects a continuation prompt so the post-compaction model retains tactical context
-
-This is the bridge between compaction and memory. Without it, everything discussed before compaction is lost until SessionEnd fires. With it, the transcript is searchable in Anamnesis immediately after compaction.
-
-**Install:**
-1. Copy to `~/.claude/hooks/pre-compact-ingest.py`
-2. Edit `ANAMNESIS_DIR` at the top of the file to point to your Anamnesis installation
-3. Add to `~/.claude/settings.json`:
-```json
-{
-  "hooks": {
+    ],
     "PreCompact": [
       {
-        "type": "command",
-        "command": "python ~/.claude/hooks/pre-compact-ingest.py",
-        "timeout": 10000
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python /path/to/Anamnesis/hooks/anamnesis-shim.py /hooks/pre-compact",
+            "timeout": 15000,
+            "statusMessage": "Capturing state + ingesting to Anamnesis..."
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python /path/to/Anamnesis/hooks/anamnesis-shim.py /hooks/post-compact",
+            "timeout": 15000,
+            "statusMessage": "Storing compact summary..."
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "EnterPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python /path/to/Anamnesis/hooks/anamnesis-shim.py /hooks/plan-recall",
+            "timeout": 15000,
+            "statusMessage": "Searching past sessions..."
+          }
+        ]
       }
     ]
   }
 }
 ```
 
-## Configuration
+If you already have hooks in your settings.json, merge these entries into the existing arrays.
 
-All hooks read configuration from environment variables:
+## Hooks
+
+### anamnesis-shim.py - Universal hook shim
+
+The single entry point for all Anamnesis hooks. Takes the server endpoint as a CLI argument.
+
+| Hook Event | Endpoint | What it does |
+|------------|----------|--------------|
+| SessionStart | `/hooks/session-start` | Queries recent sessions for the current project, checks task focus, injects context. **Auto-starts the server** if not running. |
+| SessionEnd | `/hooks/session-end` | Triggers ingestion of the session transcript. |
+| PreCompact | `/hooks/pre-compact` | Reads transcript tail to extract working state (files, commands, errors), triggers background ingestion, injects continuation prompt. |
+| PostCompact | `/hooks/post-compact` | Stores the compact summary in the database. Sessions can compact multiple times. |
+| PlanRecall | `/hooks/plan-recall` | Embeds the user's planning query, searches past sessions, injects results as additional planning context. Falls back to task focus if no query. |
+
+### Configuration
+
+The shim reads two environment variables (both optional):
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ANAMNESIS_DB_HOST` | `localhost` | PostgreSQL host |
-| `ANAMNESIS_DB_NAME` | `anamnesis` | Database name |
-| `ANAMNESIS_DB_USER` | `anamnesis` | Database user |
-| `ANAMNESIS_DB_PASSWORD` | (empty) | Database password (uses trust auth if empty) |
-| `ANAMNESIS_OLLAMA_URL` | `http://localhost:11434` | Ollama server URL (plan-recall only) |
-| `ANAMNESIS_OLLAMA_MODEL` | `bge-m3` | Embedding model (plan-recall only) |
+| `ANAMNESIS_SERVER_URL` | `http://127.0.0.1:3851` | HTTP server URL |
+| `ANAMNESIS_DIR` | `D:/Projects/Anamnesis` | Path to Anamnesis installation (for auto-start) |
 
-## Customization
+Set `ANAMNESIS_DIR` if your installation is in a different location. You can set it in the hook command:
 
-### Project name derivation
+```json
+{
+  "type": "command",
+  "command": "ANAMNESIS_DIR=/home/you/Anamnesis python /home/you/Anamnesis/hooks/anamnesis-shim.py /hooks/session-start"
+}
+```
 
-Both `session-start-recall.py` and `plan-recall.py` derive the project name from the current working directory. The default logic handles Claude Code's encoded directory format (`D--Projects-MyProject` → `MyProject`) and falls back to the last path component.
+Or on Windows (Git Bash):
+```json
+{
+  "type": "command",
+  "command": "python D:/your/path/Anamnesis/hooks/anamnesis-shim.py /hooks/session-start"
+}
+```
 
-If your directory layout is different, edit the `derive_project_name()` function in each hook.
+## Legacy Hooks (v1.2 and earlier)
+
+The following standalone hooks are preserved in this directory for reference but are no longer the recommended approach:
+
+- `session-end.json` - Direct CLI invocation for SessionEnd
+- `session-start-recall.py` - Standalone SessionStart with psycopg2
+- `plan-recall.py` - Standalone plan-mode recall with psycopg2 + Ollama
+- `pre-compact-ingest.py` - Standalone PreCompact with psycopg2
+
+These required `pip install psycopg2-binary` and each maintained its own database connection. The shim approach is simpler (no Python dependencies) and more efficient (shared server process).
+
+## Upgrading from v1.2
+
+1. Replace your hook entries in `~/.claude/settings.json` with the shim versions above
+2. Verify: start a new Claude Code session and check for the "Recalling past sessions..." status message
+3. Optionally remove old hook files from `~/.claude/hooks/` (`anamnesis-recall.py`, `plan-recall.py`, `pre-compact-ingest.py`)

@@ -20,33 +20,38 @@ When a topic spans multiple sessions, finding that context later requires rememb
 1. **ETL Pipeline** - Parse Claude Code JSONL transcripts, extract conversation turns with metadata (project, files touched, tools used, timestamps)
 2. **PostgreSQL + pgvector** - Store turns with vector embeddings for semantic similarity search
 3. **MCP Tools** - `anamnesis_search`, `anamnesis_recent`, `anamnesis_session`, `anamnesis_ingest`, `anamnesis_daily_report`
-4. **Metadata Extraction** - Auto-tag sessions with projects, files modified, topics discussed
-5. **Auto-Linking** - Connect related sessions by shared files, semantic similarity, and topics
+4. **HTTP Server** - Persistent background process handling hooks, periodic ingestion, and compact summary storage
+5. **Metadata Extraction** - Auto-tag sessions with projects, files modified, topics discussed
+6. **Auto-Linking** - Connect related sessions by shared files, semantic similarity, and topics
 
 ## Architecture
 
 ```
 Claude Code JSONL transcripts
-        │
-        ▼
+        |
+        v
    ETL Pipeline (TypeScript)
    - Parse turns, extract metadata
    - Chunk user+assistant pairs
-        │
-        ▼
+        |
+        v
    Ollama bge-m3
    - Generate 1024-dim embeddings
-        │
-        ▼
+        |
+        v
    PostgreSQL + pgvector
    - anamnesis_sessions (metadata, tags, summary)
    - anamnesis_turns (content + embeddings)
    - anamnesis_session_links (auto-links)
    - anamnesis_ingested_files (idempotency)
-        │
-        ▼
-   MCP Server (stdio)
-   - Semantic search, browsing, ingestion, reporting
+   - anamnesis_compact_summaries (compaction history)
+        |
+        v
+   MCP Server (stdio, ephemeral)           HTTP Server (persistent, port 3851)
+   - Semantic search, browsing,            - Hook handlers (session start/end,
+     ingestion, reporting                    compact, plan recall)
+                                           - Periodic background ingestion
+                                           - Compact summary storage
 ```
 
 ## Open Questions (Resolved)
@@ -54,9 +59,10 @@ Claude Code JSONL transcripts
 - **Transcript location**: `~/.claude/projects/<encoded-dir>/*.jsonl`
 - **Chunking strategy**: User+assistant pairs (captures full context per turn)
 - **Tool content**: Include everything, summarized in embedding text
-- **Ingestion trigger**: Dual — SessionEnd hook (immediate) + scheduled task (catch-up)
+- **Ingestion trigger**: Triple - SessionEnd hook (immediate) + HTTP server timer (every 15 min) + manual CLI
 - **Summaries**: Auto-generated via local LLM (topic extraction)
 - **bge-m3 dimension**: 1024
+- **Hook architecture**: Single Python shim -> HTTP server (replaced standalone scripts in v1.3)
 
 ## Origin
 

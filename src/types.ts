@@ -19,6 +19,8 @@ export interface Session {
   tools_used: string[];
   is_subagent: boolean;
   parent_session_id: string | null;
+  agent_id: string | null;
+  agent_type: string | null;
   tags: string[];
   summary: string | null;
   session_embedding: string | null;
@@ -103,7 +105,19 @@ export interface SessionInsert {
   tools_used: string[];
   is_subagent: boolean;
   parent_session_id?: string;
+  agent_id?: string;
+  agent_type?: string;
   metadata?: Record<string, unknown>;
+}
+
+// --- Compact Summaries ---
+
+export interface CompactSummary {
+  id: string;
+  session_id: string;
+  compact_summary: string;
+  trigger: string | null;
+  created_at: Date;
 }
 
 // --- Links ---

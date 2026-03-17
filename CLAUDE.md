@@ -14,6 +14,7 @@ Claude Code JSONL transcripts (~/.claude/projects/**/*.jsonl)
   → Ollama bge-m3 (localhost:11434) — 1024-dim vector embeddings
   → Storage Layer (StorageBackend) — typed interface over PostgreSQL+pgvector
   → MCP Server (stdio) — anamnesis_search, anamnesis_recent, anamnesis_session, anamnesis_ingest, anamnesis_daily_report
+  → HTTP Server (persistent) — hook handlers, periodic ingest, compact summary storage
   → Task Provider (optional) — read-only task data from Nudge DB or filesystem for report enrichment
 ```
 
@@ -21,6 +22,8 @@ Claude Code JSONL transcripts (~/.claude/projects/**/*.jsonl)
 
 ```bash
 npm run build                              # TypeScript → dist/
+npm run server                             # Start HTTP server (persistent background process)
+npm run server:dev                         # Start HTTP server with tsx (dev mode)
 node dist/index.js ingest-session [id]     # SessionEnd hook / manual
 node dist/index.js ingest <file>           # Ingest single JSONL
 node dist/index.js ingest-all              # Discover + ingest new transcripts
@@ -65,6 +68,11 @@ src/
 │   ├── gather.ts         # Search + dedup + diversity + link traversal
 │   ├── allocate.ts       # Greedy budget fill with progressive detail
 │   └── render.ts         # Progressive-detail markdown formatting
+├── server.ts             # HTTP server entry point (persistent, separate from MCP)
+├── server/               # HTTP server modules
+│   ├── routes.ts         # Route handlers for all hook endpoints
+│   ├── timer.ts          # Periodic ingest timer (configurable interval)
+│   └── pid.ts            # PID file management
 ├── etl/
 │   ├── parser.ts         # Streaming JSONL parser
 │   ├── chunker.ts        # Groups messages into user+assistant turn pairs
@@ -75,7 +83,7 @@ src/
 │   ├── topics.ts         # Topic extraction + summary via Ollama
 │   └── metadata.ts       # Session metadata extraction (project, files, tools)
 ├── db/
-│   ├── schema.sql        # Database DDL (4 tables)
+│   ├── schema.sql        # Database DDL (5 tables)
 │   └── client.ts         # @internal — pg Pool wrapper, only used by PgStorage + migrate.ts
 ├── scripts/
 │   └── migrate.ts        # Schema migration (keeps own pool — infrastructure script)
@@ -95,6 +103,8 @@ src/
 | **TaskProvider** | Optional read-only abstraction for task data. 5 providers: `GitHubProvider` (recommended, `gh` CLI), `TodoistProvider` (REST API), `LinearProvider` (GraphQL API), `FileSystemProvider` (markdown/JSON), `NudgeProvider` (Nudge DB). Created per-request, not a singleton. |
 | **Context builder** | `buildContext()` is a stateless three-phase pipeline (gather → allocate → render). Budget param on `anamnesis_search` dispatches to it; without budget, original top-N behavior is unchanged. |
 | **Config validation** | `validateConfig()` in `config.ts` checks port ranges, URL format, concurrency, search_mode. Throws `ConfigError`. |
+| **HTTP server** | Persistent process (`src/server.ts`) separate from ephemeral MCP server. Shares all code via imports. Handles hooks, periodic ingest, compact summaries. Zero new dependencies (`node:http`). |
+| **Hook shim** | `hooks/anamnesis-shim.py` — single Python file for all hooks. Reads stdin JSON, POSTs to server. Auto-starts server on SessionStart if down. |
 
 ## Infrastructure
 
@@ -103,11 +113,11 @@ src/
 | PostgreSQL + pgvector | localhost | Database: `anamnesis` |
 | Ollama bge-m3 | localhost:11434 | 1024-dim embeddings |
 | Transcripts | `~/.claude/projects/` | JSONL files |
-| MCP server | Registered in `~/.claude.json` | stdio transport |
-| SessionEnd hook | `~/.claude/settings.json` | Auto-ingest on session end |
-| SessionStart hook | `~/.claude/hooks/` | Proactive recall at session start |
-| Plan-mode hook | `~/.claude/hooks/` | PreToolUse on EnterPlanMode |
-| Scheduled task | `scripts/setup-scheduled-task.ps1` | Every 15 min (Windows) |
+| MCP server | Registered in `~/.claude.json` | stdio transport (ephemeral, per-session) |
+| HTTP server | `node dist/server.js` on port 3851 | Persistent, auto-started by shim |
+| Hook shim | `hooks/anamnesis-shim.py` | Universal shim for all hook endpoints |
+| Hooks | `~/.claude/settings.json` | SessionStart, SessionEnd, PreCompact, PostCompact, PlanRecall |
+| Periodic ingest | HTTP server timer | Every 15 min (configurable), batch of 10 files |
 
 ## Design Decisions
 
@@ -125,16 +135,37 @@ src/
 | Context builder | Token-budget-aware assembly via gather → allocate → render pipeline, leveraging session link graph |
 | Diversity re-rank | MMR heuristic: same-session=1.0, same-project=0.3 penalty (avoids pairwise embedding comparison) |
 | Incremental ingest | Only new turns are embedded on re-ingest. Session embedding updated via weighted merge. Topic re-extraction only if 5+ new turns. |
+| HTTP server | `node:http` built-in — zero new deps. Separate from MCP (persistent vs. ephemeral). Port 3851. |
+| Compact summaries | Separate table (not column) — sessions can compact multiple times |
+| Periodic ingest | Timer in HTTP server, 15 min default, batch of 10 files/tick, non-overlapping |
 | Idempotency | Track file_path + size + mtime in `anamnesis_ingested_files` |
 | Config | JSON file + env var overrides, tilde resolution, validation on load |
 | Task data | Optional `TaskProvider` interface. GitHub Issues (recommended), Todoist, Linear, filesystem, or Nudge adapters. Graceful degradation. |
 
+## HTTP Server
+
+The HTTP server (`src/server.ts`) is a persistent background process separate from the MCP server. It handles all hook logic, periodic ingestion, and compact summary storage.
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/health` | GET | Health check + uptime + version + PID |
+| `/stats` | GET | DB stats + timer status |
+| `/hooks/session-start` | POST | Recent sessions + Nudge focus → systemMessage |
+| `/hooks/session-end` | POST | Trigger ingestion of session |
+| `/hooks/pre-compact` | POST | Extract state, trigger ingest, return continuation |
+| `/hooks/post-compact` | POST | Store compact_summary, trigger ingest |
+| `/hooks/plan-recall` | POST | Embed query → semantic search → additionalContext |
+| `/ingest` | POST | On-demand ingestion trigger |
+
+Config section: `server.port` (3851), `server.host` (127.0.0.1), `server.ingest_interval_minutes` (15), `server.pid_file`.
+
 ## Database Tables
 
-- `anamnesis_sessions` — One row per session/subagent
+- `anamnesis_sessions` — One row per session/subagent (includes `agent_id`, `agent_type`)
 - `anamnesis_turns` — One row per user+assistant pair, with embedding
 - `anamnesis_ingested_files` — Idempotency tracking
 - `anamnesis_session_links` — Auto-links (file_overlap, semantic, topic)
+- `anamnesis_compact_summaries` — Compact summaries from PreCompact/PostCompact hooks
 
 ## Daily Reporting
 
